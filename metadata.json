@@ -1,0 +1,5 @@
+{
+  "name": "4-15",
+  "description": "A Chrome extension that reverse-engineers AI prompts from images using a 9-part architecture.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>AI 副驾驶</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; margin: 0; background: #09090b; color: #e4e4e7; }
+    #nav { padding: 8px; border-bottom: 1px solid #27272a; display: flex; gap: 8px; }
+    .tab { padding: 6px 12px; cursor: pointer; border-radius: 4px; }
+    .tab.active { background: #27272a; }
+    #content { flex: 1; overflow-y: auto; padding: 12px; }
+    #action-bar { padding: 12px; border-top: 1px solid #27272a; background: #18181b; }
+    #prompt-input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #27272a; background: #09090b; color: white; margin-bottom: 8px; box-sizing: border-box; }
+    .btn { padding: 8px 16px; border-radius: 6px; cursor: pointer; border: none; font-weight: 500; }
+    .btn-primary { background: #3b82f6; color: white; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div id="nav">
+    <div class="tab active" data-tab="library">灵感库</div>
+    <div class="tab" data-tab="chat">Chat</div>
+  </div>
+  <div id="content">
+    <div id="library-view"></div>
+    <div id="chat-view" class="hidden"></div>
+  </div>
+  <div id="action-bar">
+    <textarea id="prompt-input" rows="3" placeholder="输入或修改提示词..."></textarea>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" id="inject-btn" style="flex: 1;">注入到网页</button>
+      <button class="btn" id="optimize-btn" style="flex: 1;">智能优化</button>
+    </div>
+  </div>
+  <script src="sidepanel.js"></script>
+</body>
+</html>
