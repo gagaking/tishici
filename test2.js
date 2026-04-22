@@ -1,0 +1,1 @@
+/<think>[\s\S]*?<\/think>/gi

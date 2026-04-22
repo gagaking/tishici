@@ -748,7 +748,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     chrome.storage.local.get(['ollamaUrl', 'ollamaModel'], async (result) => {
       const ollamaUrl = result.ollamaUrl || 'http://localhost:11434';
-      const ollamaModel = result.ollamaModel || 'gemma4:e4b';
+      const ollamaModel = result.ollamaModel || 'qwen3.5:9b';
 
       try {
         let base64Image;
@@ -767,6 +767,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             binary += String.fromCharCode(bytes[i]);
           }
           base64Image = btoa(binary);
+        }
+
+        // Resize image to prevent Ollama from getting stuck
+        try {
+          const res = await fetch('data:image/jpeg;base64,' + base64Image);
+          const blob = await res.blob();
+          const bitmap = await createImageBitmap(blob);
+          let width = bitmap.width;
+          let height = bitmap.height;
+          const maxSize = 800; // max size 800px
+          if (width > maxSize || height > maxSize) {
+            if (width > height) {
+              height = Math.round((height * maxSize) / width);
+              width = maxSize;
+            } else {
+              width = Math.round((width * maxSize) / height);
+              height = maxSize;
+            }
+            const canvas = new OffscreenCanvas(width, height);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(bitmap, 0, 0, width, height);
+            const resizedBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.8 });
+            const buffer = await resizedBlob.arrayBuffer();
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            for (let i = 0; i < bytes.byteLength; i++) {
+              binary += String.fromCharCode(bytes[i]);
+            }
+            base64Image = btoa(binary);
+          }
+        } catch(e) {
+          console.error('Image resize failed', e);
         }
 
         const prompt = \`
@@ -812,17 +844,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             prompt: prompt,
             images: [base64Image],
             stream: false,
-            format: 'json',
-            keep_alive: 0,
+            keep_alive: '5m',
             options: {
               num_gpu: 99,
-              num_ctx: 4096
+              num_ctx: 4096,
+              num_predict: 2048
             }
           })
         });
 
         const data = await apiResponse.json();
-        const parsedData = JSON.parse(data.response);
+        let rawText = data.response.trim();
+        if (rawText.startsWith('\`\`\`json')) {
+          rawText = rawText.replace(/\`\`\`json/gi, '').replace(/\`\`\`/g, '').trim();
+        } else if (rawText.startsWith('\`\`\`')) {
+          rawText = rawText.replace(/\`\`\`/g, '').trim();
+        }
+        const startIdx = rawText.indexOf('{');
+        const endIdx = rawText.lastIndexOf('}');
+        if (startIdx !== -1 && endIdx !== -1) {
+          rawText = rawText.substring(startIdx, endIdx + 1);
+        }
+        
+        let parsedData;
+        try {
+          parsedData = JSON.parse(rawText);
+          if (parsedData && typeof parsedData === 'object' && Object.keys(parsedData).length === 0) {
+            parsedData = rawText;
+          }
+        } catch (e) {
+          parsedData = rawText;
+        }
+
+        // Validate it's not totally empty if object
+        if (!parsedData || (typeof parsedData === 'object' && Object.keys(parsedData).length === 0)) {
+           throw new Error('模型返回了空数据');
+        }
 
         // Save to history
         chrome.storage.local.get(['promptHistory'], (res) => {
@@ -858,7 +915,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'rewritePrompt') {
     chrome.storage.local.get(['ollamaUrl', 'ollamaModel'], async (result) => {
       const ollamaUrl = result.ollamaUrl || 'http://localhost:11434';
-      const ollamaModel = result.ollamaModel || 'gemma4:e4b';
+      const ollamaModel = result.ollamaModel || 'qwen3.5:9b';
       
       try {
         const response = await fetch(\`\${ollamaUrl}/api/generate\`, {
@@ -867,7 +924,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           body: JSON.stringify({
             model: ollamaModel,
             prompt: \`请一键清除以下提示词中所有关于服装的描述（款式、颜色、形态等），并在提示词最前面增加“图中的模特穿着图中的服饰”。直接输出修改后的完整提示词，不要包含任何其他解释或多余的话。\\n\\n原始提示词：\\n\${request.prompt}\`,
-            stream: false
+            stream: false,
+            keep_alive: '5m',
+            options: { num_gpu: 99, num_predict: 1024 }
           })
         });
         
@@ -915,14 +974,14 @@ export const popupHtml = `
       <span>🦆</span>
       <h2>Ollama 离线版配置</h2>
     </div>
-    <p>请配置您的本地 Ollama 服务地址和多模态模型名称（如 gemma4:e4b）。</p>
+    <p>请配置您的本地 Ollama 服务地址和多模态模型名称（如 qwen3.5:9b）。</p>
     <div class="input-group">
       <label for="ollamaUrl">Ollama 服务地址</label>
       <input type="text" id="ollamaUrl" placeholder="http://localhost:11434" value="http://localhost:11434">
     </div>
     <div class="input-group">
       <label for="ollamaModel">模型名称</label>
-      <input type="text" id="ollamaModel" placeholder="gemma4:e4b" value="gemma4:e4b">
+      <input type="text" id="ollamaModel" placeholder="qwen3.5:9b" value="qwen3.5:9b">
     </div>
     <button id="saveBtn">保存配置</button>
     <button id="historyBtn" class="secondary-btn">查看提示词收藏夹</button>

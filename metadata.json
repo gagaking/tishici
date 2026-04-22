@@ -1,5 +1,5 @@
 {
-  "name": "4-15",
-  "description": "A Chrome extension that reverse-engineers AI prompts from images using a 9-part architecture.",
+  "name": "Remix: Remix: AI视觉副驾驶 \u0026 画廊嗅探-422",
+  "description": "融合网页内容抓取、图片批量下载、多模态AI视觉反推与深度视频嗅探探测（支持小红书/花瓣等）的完整Chrome扩展项目。内含打包下载机制。",
   "requestFramePermissions": []
 }

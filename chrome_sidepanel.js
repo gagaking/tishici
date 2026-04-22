@@ -1,0 +1,2003 @@
+
+function showToast(message, type = 'error') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  const bgColor = type === 'error' ? 'rgba(239, 68, 68, 0.95)' : 'rgba(16, 185, 129, 0.95)';
+  toast.style.cssText = `background: ${bgColor}; color: white; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15); backdrop-filter: blur(8px); opacity: 0; transform: translateY(-10px); transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  
+  requestAnimationFrame(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  });
+  
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-10px)';
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 300);
+  }, 3000);
+}
+
+const promptInput = document.getElementById('prompt-input');
+let currentQuoteText = null;
+
+const quotePreviewContainer = document.getElementById('quote-preview-container');
+const quotePreviewText = document.getElementById('quote-preview-text');
+const removeQuoteBtn = document.getElementById('remove-quote');
+
+function setQuote(text) {
+  currentQuoteText = text;
+  quotePreviewText.textContent = text;
+  quotePreviewContainer.style.display = 'block';
+  promptInput.focus();
+}
+
+function removeQuote() {
+  currentQuoteText = null;
+  quotePreviewText.textContent = '';
+  quotePreviewContainer.style.display = 'none';
+}
+
+removeQuoteBtn.addEventListener('click', removeQuote);
+
+// Auto-resize textarea
+promptInput.addEventListener('input', function() {
+  this.style.height = 'auto';
+  this.style.height = (this.scrollHeight) + 'px';
+  if (this.value === '') {
+    this.style.height = 'auto';
+  }
+});
+
+// Settings Logic
+const geminiKeyInput = document.getElementById('gemini-key');
+const geminiModelInput = document.getElementById('gemini-model');
+const ollamaUrlInput = document.getElementById('ollama-url');
+const ollamaModelInput = document.getElementById('ollama-model');
+
+chrome.storage.local.get(['geminiApiKey', 'geminiModel', 'ollamaUrl', 'ollamaModel'], (res) => {
+  if (res.geminiApiKey) geminiKeyInput.value = res.geminiApiKey;
+  if (res.geminiModel !== undefined) geminiModelInput.value = res.geminiModel;
+  else geminiModelInput.value = 'gemini-3.1-flash-lite-preview';
+  if (res.ollamaUrl) ollamaUrlInput.value = res.ollamaUrl;
+  if (res.ollamaModel) ollamaModelInput.value = res.ollamaModel;
+});
+
+document.getElementById('toggle-ollama-url').addEventListener('click', (e) => {
+  e.preventDefault();
+  const container = document.getElementById('ollama-url-container');
+  if (container.style.display === 'none') {
+    container.style.display = 'block';
+  } else {
+    container.style.display = 'none';
+  }
+});
+
+document.getElementById('fetch-ollama-models').addEventListener('click', async () => {
+    const urlInput = ollamaUrlInput.value.trim() || 'http://127.0.0.1:11434';
+    let formattedUrl = urlInput;
+    if (!formattedUrl.startsWith('http')) formattedUrl = 'http://' + formattedUrl;
+    
+    const btn = document.getElementById('fetch-ollama-models');
+    btn.textContent = '...';
+    try {
+        const res = await fetch(`${formattedUrl}/api/tags`);
+        const data = await res.json();
+        const models = data.models || [];
+        
+        const listEl = document.getElementById('ollama-models-list');
+        listEl.innerHTML = '';
+        if (models.length === 0) {
+            listEl.innerHTML = '<div style="padding: 8px; color: #666; font-size: 13px;">无可用模型</div>';
+        } else {
+            models.forEach(m => {
+                const item = document.createElement('div');
+                item.textContent = m.name;
+                item.style.padding = '8px 12px';
+                item.style.fontSize = '13px';
+                item.style.cursor = 'pointer';
+                item.style.borderBottom = '1px solid var(--border-color)';
+                item.style.color = 'var(--text-main)';
+                item.addEventListener('mouseenter', () => item.style.backgroundColor = 'rgba(0,0,0,0.05)');
+                item.addEventListener('mouseleave', () => item.style.backgroundColor = 'transparent');
+                item.addEventListener('click', () => {
+                    ollamaModelInput.value = m.name;
+                    listEl.style.display = 'none';
+                });
+                listEl.appendChild(item);
+            });
+        }
+        listEl.style.display = 'block';
+    } catch (err) {
+        console.error(err);
+        showToast('无法获取 Ollama 模型，请确保 Ollama 后台已启动并在配置中容许扩展跨域请求或检查 URL。', 'error');
+    }
+    btn.textContent = '获取';
+});
+
+document.getElementById('toggle-gemini-models').addEventListener('click', (e) => {
+    e.preventDefault();
+    const list = document.getElementById('gemini-models-list');
+    list.style.display = list.style.display === 'none' ? 'block' : 'none';
+});
+
+document.querySelectorAll('.gemini-model-option').forEach(option => {
+    option.addEventListener('mouseenter', () => option.style.backgroundColor = 'rgba(0,0,0,0.05)');
+    option.addEventListener('mouseleave', () => option.style.backgroundColor = 'transparent');
+    option.addEventListener('click', () => {
+        document.getElementById('gemini-model').value = option.dataset.value;
+        document.getElementById('gemini-models-list').style.display = 'none';
+    });
+});
+
+document.addEventListener('click', (e) => {
+    const ollamaList = document.getElementById('ollama-models-list');
+    if (ollamaList && ollamaList.style.display === 'block') {
+        if (!e.target.closest('#fetch-ollama-models') && !e.target.closest('#ollama-models-list')) {
+            ollamaList.style.display = 'none';
+        }
+    }
+    
+    const geminiList = document.getElementById('gemini-models-list');
+    if (geminiList && geminiList.style.display === 'block') {
+        if (!e.target.closest('#toggle-gemini-models') && !e.target.closest('#gemini-models-list')) {
+            geminiList.style.display = 'none';
+        }
+    }
+});
+
+document.getElementById('save-settings-btn').addEventListener('click', () => {
+  chrome.storage.local.set({
+    geminiApiKey: geminiKeyInput.value.trim(),
+    geminiModel: geminiModelInput.value.trim() || 'gemini-3.1-flash-lite-preview',
+    ollamaUrl: ollamaUrlInput.value.trim(),
+    ollamaModel: ollamaModelInput.value.trim()
+  }, () => {
+    const status = document.getElementById('save-status');
+    status.style.display = 'block';
+    setTimeout(() => status.style.display = 'none', 2000);
+  });
+});
+
+// Template Logic
+const defaultTemplates = [
+  { id: 'default-txt', name: '复杂/默认结构', content: `作为一名专业的图像分析师，你的任务是客观、精确、极其详细地分析所提供的图像。你必须严格描述画面中实际存在的内容，禁止推断、想象或添加任何画面以外的元素。
+核心原则:
+绝对客观: 只描述你所看到的。
+主体优先: 首先识别图像的核心主体。
+精确量化: 对数量、位置、角度要尽可能精确。
+反向解析为一段包含9大模块的 JSON 格式数据输出。
+
+⚠️ 严格规则（必须遵守）：
+你必须且只能返回一段合法的 JSON (json) 数据。不要输出多余的解释。
+如果图片中不存在该信息则填空字符串 ""：
+{
+  "风格与效果": "风格、光影类型、整体视觉风格、后期色彩倾向",
+  "光影与机位": "主光类型、光比、阴影特征、景别、机位角度、焦段、环境光反射、局部光效、主体与背景关系",
+  "主体与姿态": "人物属性、表情、眼神、微动作、主体位置、头部、躯干、四肢姿态、脚部细节",
+  "主色与氛围": "主色、副色、点缀色、整体氛围、渐变、环境反射",
+  "背景与空间": "几何结构、比例、材质、光影互动、空间层次",
+  "道具与互动": "道具类型、互动方式、手部细节、织物状态、占比关系",
+  "动作与细节": "主体动作、手部状态、配饰、细微动态",
+  "穿搭与风格": "上装、下装、鞋子、材质反光与褶皱、配色关系、整体统一性",
+  "特殊效果": "特效类型、后期处理、材质表现精度"
+}
+
+开始解析图片并输出：` },
+  { id: 'simple-txt', name: '简单', content: `你是一位顶级AI绘画提示词工程师（Midjourney / Stable Diffusion）。
+
+任务：将我提供的图片，反向解析为“可直接用于生图的一行中文Prompt”。
+
+⚠ 严格规则（必须遵守）：
+- 只输出【最终Prompt】，不做任何解释
+- 输出为【单行中文】，用逗号分隔关键词
+- 不要分段
+- 不要标题
+- 不要解释性语言（如：this image shows / a photo of）
+- 不要结构标签（如 Subject / Style 等）
+- 保持专业、精简、可直接复制使用
+
+⚙ Prompt内容必须包含：
+[主体与动作],
+[构图与机位],
+[风格],
+[光影],
+[色彩],
+[材质与细节],
+[空间与背景],
+[质量与渲染]
+
+现在开始解析图片并输出：` }
+];
+
+const topTemplateSelect = document.getElementById('top-template-select');
+const templateSelect = document.getElementById('template-select');
+const templateContent = document.getElementById('template-content');
+const newTemplateName = document.getElementById('new-template-name');
+const saveTemplateBtn = document.getElementById('save-template-btn');
+const deleteTemplateBtn = document.getElementById('delete-template-btn');
+
+function loadTemplates() {
+  chrome.storage.local.get(['promptTemplates', 'activeTemplateId'], (res) => {
+    let templates = res.promptTemplates || defaultTemplates;
+    
+    // Force update old templates
+    if (templates.length === 1 && templates[0].id === 'default-txt' && templates[0].name === '默认结构') {
+      templates = defaultTemplates;
+      chrome.storage.local.set({ promptTemplates: templates });
+    }
+    
+    const defaultIndex = templates.findIndex(t => t.id === 'default-txt');
+    if (defaultIndex >= 0) {
+       templates[defaultIndex] = defaultTemplates[0]; // refresh complex
+       
+       const simpleIndex = templates.findIndex(t => t.id === 'simple-txt');
+       if (simpleIndex === -1) {
+         templates.push(defaultTemplates[1]);
+       } else {
+         templates[simpleIndex] = defaultTemplates[1];
+       }
+       chrome.storage.local.set({ promptTemplates: templates });
+    }
+
+    const activeId = (res.activeTemplateId === 'default' ? 'default-txt' : res.activeTemplateId) || 'default-txt';
+    
+    if (topTemplateSelect) topTemplateSelect.innerHTML = '';
+    if (templateSelect) templateSelect.innerHTML = '';
+    
+    const topOptionsContainer = document.getElementById('top-template-options');
+    const templateOptionsContainer = document.getElementById('template-options');
+    if (topOptionsContainer) topOptionsContainer.innerHTML = '';
+    if (templateOptionsContainer) templateOptionsContainer.innerHTML = '';
+    
+    templates.forEach(t => {
+      if (topTemplateSelect) {
+        const opt1 = document.createElement('option');
+        opt1.value = t.id;
+        opt1.textContent = t.name;
+        if (t.id === activeId) opt1.selected = true;
+        topTemplateSelect.appendChild(opt1);
+        
+        if (topOptionsContainer) {
+          const customOpt1 = document.createElement('div');
+          customOpt1.className = 'custom-option' + (t.id === activeId ? ' selected' : '');
+          customOpt1.textContent = t.name;
+          customOpt1.dataset.value = t.id;
+          customOpt1.addEventListener('click', () => {
+            topTemplateSelect.value = t.id;
+            topTemplateSelect.dispatchEvent(new Event('change'));
+            document.getElementById('top-template-display').textContent = t.name;
+            topOptionsContainer.classList.remove('open');
+            document.getElementById('top-template-display').classList.remove('open');
+            updateCustomOptionsSelection(topOptionsContainer, t.id);
+          });
+          topOptionsContainer.appendChild(customOpt1);
+          if (t.id === activeId) {
+            document.getElementById('top-template-display').textContent = t.name;
+          }
+        }
+      }
+      
+      if (templateSelect) {
+        const opt2 = document.createElement('option');
+        opt2.value = t.id;
+        opt2.textContent = t.name;
+        if (t.id === activeId) opt2.selected = true;
+        templateSelect.appendChild(opt2);
+        
+        if (templateOptionsContainer) {
+          const customOpt2 = document.createElement('div');
+          customOpt2.className = 'custom-option' + (t.id === activeId ? ' selected' : '');
+          customOpt2.textContent = t.name;
+          customOpt2.dataset.value = t.id;
+          customOpt2.addEventListener('click', () => {
+            templateSelect.value = t.id;
+            templateSelect.dispatchEvent(new Event('change'));
+            document.getElementById('template-display').textContent = t.name;
+            templateOptionsContainer.classList.remove('open');
+            document.getElementById('template-display').classList.remove('open');
+            updateCustomOptionsSelection(templateOptionsContainer, t.id);
+          });
+          templateOptionsContainer.appendChild(customOpt2);
+          if (t.id === activeId) {
+            document.getElementById('template-display').textContent = t.name;
+          }
+        }
+      }
+    });
+    
+    const activeTpl = templates.find(t => t.id === activeId) || templates[0];
+    if (templateContent) templateContent.value = activeTpl.content;
+    if (newTemplateName) newTemplateName.value = activeTpl.name;
+  });
+}
+
+function updateCustomOptionsSelection(container, value) {
+  if (!container) return;
+  const options = container.querySelectorAll('.custom-option');
+  options.forEach(opt => {
+    if (opt.dataset.value === value) {
+      opt.classList.add('selected');
+    } else {
+      opt.classList.remove('selected');
+    }
+  });
+}
+
+function setupCustomDropdowns() {
+  const topDisplay = document.getElementById('top-template-display');
+  const topOptions = document.getElementById('top-template-options');
+  if (topDisplay && topOptions) {
+    topDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      topOptions.classList.toggle('open');
+      topDisplay.classList.toggle('open');
+    });
+  }
+  
+  const templateDisplay = document.getElementById('template-display');
+  const templateOptions = document.getElementById('template-options');
+  if (templateDisplay && templateOptions) {
+    templateDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      templateOptions.classList.toggle('open');
+      templateDisplay.classList.toggle('open');
+    });
+  }
+  
+  document.addEventListener('click', () => {
+    if (topOptions) topOptions.classList.remove('open');
+    if (topDisplay) topDisplay.classList.remove('open');
+    if (templateOptions) templateOptions.classList.remove('open');
+    if (templateDisplay) templateDisplay.classList.remove('open');
+  });
+  
+  const expandBtn = document.getElementById('expand-template-btn');
+  const templateContent = document.getElementById('template-content');
+  if (expandBtn && templateContent) {
+    expandBtn.addEventListener('click', () => {
+      if (templateContent.rows === 6) {
+        templateContent.rows = 15;
+      } else {
+        templateContent.rows = 6;
+      }
+    });
+  }
+}
+setupCustomDropdowns();
+
+function switchTemplate(selectedId) {
+  chrome.storage.local.set({ activeTemplateId: selectedId });
+  chrome.storage.local.get(['promptTemplates'], (res) => {
+    const templates = res.promptTemplates || defaultTemplates;
+    const tpl = templates.find(t => t.id === selectedId);
+    if (tpl) {
+      if (templateContent) templateContent.value = tpl.content;
+      if (newTemplateName) newTemplateName.value = tpl.name;
+      if (topTemplateSelect) topTemplateSelect.value = selectedId;
+      if (templateSelect) templateSelect.value = selectedId;
+    }
+  });
+}
+
+if (topTemplateSelect) topTemplateSelect.addEventListener('change', (e) => switchTemplate(e.target.value));
+if (templateSelect) templateSelect.addEventListener('change', (e) => switchTemplate(e.target.value));
+
+if (saveTemplateBtn) {
+  saveTemplateBtn.addEventListener('click', () => {
+    const name = newTemplateName.value.trim();
+    const content = templateContent.value.trim();
+    if (!name || !content) return showToast('名称和内容不能为空', 'error');
+    
+    chrome.storage.local.get(['promptTemplates', 'activeTemplateId'], (res) => {
+      let templates = res.promptTemplates || defaultTemplates;
+      let activeId = templateSelect.value;
+      
+      const existingIndex = templates.findIndex(t => t.id === activeId);
+      if (existingIndex >= 0 && templates[existingIndex].name === name) {
+        templates[existingIndex].content = content;
+      } else {
+        const newId = 'tpl_' + Date.now();
+        templates.push({ id: newId, name, content });
+        activeId = newId;
+      }
+      
+      chrome.storage.local.set({ promptTemplates: templates, activeTemplateId: activeId }, () => {
+        loadTemplates();
+        const status = document.getElementById('save-status');
+        if (status) {
+          status.textContent = '模版已保存！';
+          status.style.display = 'block';
+          setTimeout(() => status.style.display = 'none', 2000);
+        }
+      });
+    });
+  });
+}
+
+if (deleteTemplateBtn) {
+  deleteTemplateBtn.addEventListener('click', () => {
+    const selectedId = templateSelect.value;
+    if (selectedId === 'default-txt' || selectedId === 'default') return showToast('预设模版不可删除', 'error');
+    
+    chrome.storage.local.get(['promptTemplates'], (res) => {
+      let templates = res.promptTemplates || defaultTemplates;
+      templates = templates.filter(t => t.id !== selectedId);
+      chrome.storage.local.set({ promptTemplates: templates, activeTemplateId: 'default-txt' }, () => {
+        loadTemplates();
+        const status = document.getElementById('save-status');
+        if (status) {
+          status.textContent = '模版已删除！';
+          status.style.display = 'block';
+          setTimeout(() => status.style.display = 'none', 2000);
+        }
+      });
+    });
+  });
+}
+
+loadTemplates();
+
+// Copy Helper
+function copyText(text, btn) {
+  navigator.clipboard.writeText(text);
+  const oldHtml = btn.innerHTML;
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+  setTimeout(() => btn.innerHTML = oldHtml, 2000);
+}
+
+// Library Logic
+let currentLibraryTab = 'local';
+let onlinePresetsCache = null;
+
+async function fetchOnlinePresets() {
+  if (onlinePresetsCache) return onlinePresetsCache;
+  try {
+    const res = await fetch('https://docs.google.com/spreadsheets/d/1D8JmHT_ijrTqUY1uIV5WZdfpqfouQ68TlMHiAvusyyo/export?format=csv');
+    const text = await res.text();
+    // Basic CSV parsing
+    const rows = text.split('\n').map(row => {
+      let isInsideQuotes = false;
+      let cols = [];
+      let currentString = "";
+      for (let i = 0; i < row.length; i++) {
+        if (row[i] === '"') {
+          isInsideQuotes = !isInsideQuotes;
+        } else if (row[i] === ',' && !isInsideQuotes) {
+          cols.push(currentString);
+          currentString = "";
+        } else {
+          currentString += row[i];
+        }
+      }
+      cols.push(currentString);
+      return cols.map(c => c.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+    });
+    
+    // Headers are in first row. Need columns: 标题描述, 图片预览, 完整提示词
+    const headers = rows[0] || [];
+    const titleIdx = headers.findIndex(h => h.includes('标题描述'));
+    const imgIdx = headers.findIndex(h => h.includes('图片预览'));
+    const promptIdx = headers.findIndex(h => h.includes('完整提示词'));
+    
+    if (titleIdx === -1 || imgIdx === -1 || promptIdx === -1) {
+      console.warn("Could not find required columns in CSV");
+      return [];
+    }
+    
+    const presets = [];
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i];
+      if (row.length <= Math.max(titleIdx, imgIdx, promptIdx)) continue;
+      if (!row[promptIdx]) continue; // skip empty prompts
+      
+      let imgUrl = row[imgIdx] || '';
+      // Convert google drive link to thumbnail
+      if (imgUrl.includes('drive.google.com/file/d/')) {
+        const match = imgUrl.match(/\/d\/([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) {
+          imgUrl = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w300`;
+        }
+      } else if (imgUrl.includes('id=')) {
+        const match = imgUrl.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+        if (match && match[1]) {
+          imgUrl = `https://drive.google.com/thumbnail?id=${match[1]}&sz=w300`;
+        }
+      }
+      
+      presets.push({
+        id: 'online_' + i,
+        title: row[titleIdx] || '',
+        url: imgUrl,
+        prompt: row[promptIdx]
+      });
+    }
+    onlinePresetsCache = presets;
+    return presets;
+  } catch(e) {
+    console.error("Failed to fetch online presets:", e);
+    return [];
+  }
+}
+
+async function renderLibrary(searchQuery = '') {
+  const gridContainer = document.getElementById('library-grid-container');
+  if (!gridContainer) return;
+  
+  let itemsToRender = [];
+  
+  if (currentLibraryTab === 'online') {
+    gridContainer.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top: 40px; font-size: 14px;"><div class="ai-status-spinner" style="display:inline-block; margin-right:8px; border-width: 2px;"></div>加载在线预设...</div>';
+    const presets = await fetchOnlinePresets();
+    
+    itemsToRender = presets.map(p => ({
+      id: p.id,
+      url: p.url,
+      displayTitle: p.title + "\n" + p.prompt,
+      promptText: p.prompt,
+      isOnline: true
+    }));
+  } else {
+    const res = await new Promise(r => chrome.storage.local.get(['promptHistory'], r));
+    const history = res.promptHistory || [];
+    itemsToRender = history.map(item => {
+      const d = item.data?.zh || item.data;
+      let keywords = '';
+      if (typeof d === 'string') {
+        keywords = d;
+      } else if (typeof d === 'object' && d !== null) {
+        keywords = Object.values(d).join('\n');
+      }
+      return {
+        id: item.id,
+        url: item.url,
+        displayTitle: keywords,
+        promptText: keywords,
+        isOnline: false
+      };
+    });
+  }
+  
+  let filteredItems = itemsToRender;
+  if (searchQuery) {
+    const lowerQuery = searchQuery.toLowerCase();
+    filteredItems = itemsToRender.filter(item => 
+      item.displayTitle.toLowerCase().includes(lowerQuery)
+    );
+  }
+
+  if (filteredItems.length === 0) {
+    gridContainer.innerHTML = '<div style="text-align:center; color:var(--text-muted); margin-top: 40px; font-size: 14px;">暂无匹配的提示词</div>';
+    return;
+  }
+  
+  gridContainer.innerHTML = '<div id="library-grid"></div>';
+  const grid = gridContainer.querySelector('#library-grid');
+  
+  filteredItems.forEach(item => {
+    const card = document.createElement('div');
+    card.className = 'card glass';
+    
+    // Add missing img protocol if necessary
+    let imgHtml = item.url ? `<img src="${item.url}" class="card-img" style="cursor: pointer;" title="填入提示词">` : `<div class="card-img" style="width: 100%; aspect-ratio: 3/4; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.05); color:var(--text-muted); cursor: pointer;" title="填入提示词">暂无图片</div>`;
+    
+    let deleteBtnHtml = item.isOnline ? '' : `<button class="btn delete-btn" style="flex:0 0 28px; padding: 0; display:flex; align-items:center; justify-content:center; color: #ef4444; background: rgba(239, 68, 68, 0.08); border-color: rgba(239, 68, 68, 0.2);" title="删除">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="16" height="16"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg>
+    </button>`;
+    
+    card.innerHTML = `${imgHtml}
+                      <div class="card-actions" style="margin-top: auto;">
+                        <button class="btn btn-glass-purple copy-btn" style="flex:1; padding: 6px; font-size: 12px; white-space: nowrap;" title="复制提示词">复制</button>
+                        <button class="btn btn-glass-purple rewrite-btn" style="flex:1; padding: 6px; font-size: 12px; white-space: nowrap;" title="换装：自动清除服装描述并添加穿着图中的服饰">换装</button>
+                        ${deleteBtnHtml}
+                      </div>`;
+    
+    if (!item.isOnline) {
+      card.querySelector('.delete-btn').onclick = (e) => {
+        e.stopPropagation();
+        chrome.storage.local.get(['promptHistory'], (res) => {
+          const history = res.promptHistory || [];
+          const newHistory = history.filter(h => h.id !== item.id);
+          chrome.storage.local.set({ promptHistory: newHistory }, () => {
+            renderLibrary(document.getElementById('library-search').value);
+          });
+        });
+      };
+    }
+    
+    card.querySelector('.card-img').onclick = () => { 
+      promptInput.value = item.promptText; 
+      promptInput.dispatchEvent(new Event('input'));
+      closeModal();
+    };
+    
+    card.querySelector('.copy-btn').onclick = (e) => {
+      copyText(item.promptText, e.currentTarget);
+    };
+    
+    card.querySelector('.rewrite-btn').onclick = (e) => {
+      executeRewrite(item.promptText);
+    };
+    
+    grid.appendChild(card);
+  });
+}
+
+// Modal Logic
+const modalOverlay = document.getElementById('modal-overlay');
+const modalBody = document.getElementById('modal-body');
+const closeModalBtn = document.getElementById('close-modal-btn');
+const modalContent = document.getElementById('modal-content');
+
+function openModal(viewId, isLarge = false) {
+  const view = document.getElementById(viewId);
+  if (view) {
+    modalBody.innerHTML = '';
+    view.style.display = (viewId === 'library-view' || viewId === 'downloader-view') ? 'flex' : 'block';
+    modalBody.appendChild(view);
+    
+    if (isLarge) {
+      modalContent.style.maxWidth = '800px';
+      modalContent.style.height = '90vh';
+    } else {
+      modalContent.style.maxWidth = '400px';
+      modalContent.style.height = 'auto';
+    }
+    
+    modalOverlay.style.display = 'flex';
+  }
+}
+
+function closeModal() {
+  modalOverlay.style.display = 'none';
+  const content = document.getElementById('content');
+  const view = modalBody.firstElementChild;
+  if (view) {
+    view.style.display = 'none';
+    content.appendChild(view);
+  }
+}
+
+closeModalBtn.addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+
+document.getElementById('open-settings-btn').addEventListener('click', () => openModal('settings-view', false));
+document.getElementById('open-library-btn').addEventListener('click', () => {
+  openModal('library-view', true);
+  renderLibrary();
+});
+
+// Chat History Logic
+const historyToggleBtn = document.getElementById('history-toggle-btn');
+const historyDropdown = document.getElementById('history-dropdown');
+const historyList = document.getElementById('history-list');
+const newChatBtn = document.getElementById('new-chat-btn');
+
+let currentChatId = null;
+
+historyToggleBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  historyDropdown.style.display = historyDropdown.style.display === 'none' ? 'block' : 'none';
+});
+
+document.addEventListener('click', (e) => {
+  if (!historyDropdown.contains(e.target) && e.target !== historyToggleBtn) {
+    historyDropdown.style.display = 'none';
+  }
+});
+
+function loadChatHistory() {
+  chrome.storage.local.get(['chatSessions', 'activeChatId'], (res) => {
+    const sessions = res.chatSessions || [{ id: 'default', name: '新对话', messages: [] }];
+    currentChatId = res.activeChatId || sessions[0].id;
+    
+    if (!sessions.find(s => s.id === currentChatId)) {
+      currentChatId = sessions[0].id;
+    }
+    
+    historyList.innerHTML = '';
+    sessions.forEach(s => {
+      const item = document.createElement('div');
+      item.style.padding = '10px 12px';
+      item.style.borderRadius = '8px';
+      item.style.cursor = 'pointer';
+      item.style.marginBottom = '4px';
+      item.style.display = 'flex';
+      item.style.justifyContent = 'space-between';
+      item.style.alignItems = 'center';
+      item.style.fontSize = '13px';
+      
+      if (s.id === currentChatId) {
+        item.style.background = 'rgba(0,0,0,0.05)';
+        item.style.fontWeight = '500';
+      }
+      
+      item.addEventListener('mouseover', () => {
+        if (s.id !== currentChatId) item.style.background = 'rgba(0,0,0,0.02)';
+      });
+      item.addEventListener('mouseout', () => {
+        if (s.id !== currentChatId) item.style.background = 'transparent';
+      });
+      
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = s.name;
+      nameSpan.style.flex = '1';
+      nameSpan.style.whiteSpace = 'nowrap';
+      nameSpan.style.overflow = 'hidden';
+      nameSpan.style.textOverflow = 'ellipsis';
+      item.appendChild(nameSpan);
+      
+      item.addEventListener('click', () => {
+        currentChatId = s.id;
+        chrome.storage.local.set({ activeChatId: currentChatId });
+        loadChatHistory();
+        historyDropdown.style.display = 'none';
+      });
+      
+      const delBtn = document.createElement('button');
+      delBtn.innerHTML = '<svg viewBox="0 0 24 24" style="width: 14px; height: 14px;"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+      delBtn.style.background = 'transparent';
+      delBtn.style.border = 'none';
+      delBtn.style.color = '#9ca3af';
+      delBtn.style.cursor = 'pointer';
+      delBtn.style.padding = '4px';
+      delBtn.style.display = 'flex';
+      delBtn.style.alignItems = 'center';
+      delBtn.style.justifyContent = 'center';
+      delBtn.style.borderRadius = '4px';
+      
+      delBtn.addEventListener('mouseover', () => { delBtn.style.color = '#ef4444'; delBtn.style.background = 'rgba(239, 68, 68, 0.1)'; });
+      delBtn.addEventListener('mouseout', () => { delBtn.style.color = '#9ca3af'; delBtn.style.background = 'transparent'; });
+      
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteChat(s.id);
+      });
+      item.appendChild(delBtn);
+      
+      historyList.appendChild(item);
+    });
+    
+    renderChatMessages();
+  });
+}
+
+function saveCurrentChat(messages) {
+  chrome.storage.local.get(['chatSessions'], (res) => {
+    let sessions = res.chatSessions || [{ id: 'default', name: '新对话', messages: [] }];
+    const sessionIndex = sessions.findIndex(s => s.id === currentChatId);
+    
+    if (sessionIndex >= 0) {
+      sessions[sessionIndex].messages = messages;
+      if (sessions[sessionIndex].name.startsWith('新对话') && messages.length > 0) {
+        const firstUserMsg = messages.find(m => m.isUser);
+        if (firstUserMsg && firstUserMsg.text) {
+          sessions[sessionIndex].name = firstUserMsg.text.substring(0, 15) + (firstUserMsg.text.length > 15 ? '...' : '');
+        }
+      }
+    }
+    
+    chrome.storage.local.set({ chatSessions: sessions }, () => {
+      // Only update UI if we renamed it
+      if (sessionIndex >= 0 && !sessions[sessionIndex].name.startsWith('新对话')) {
+        loadChatHistory();
+      }
+    });
+  });
+}
+
+newChatBtn.addEventListener('click', () => {
+  chrome.storage.local.get(['chatSessions'], (res) => {
+    const sessions = res.chatSessions || [];
+    const currentSession = sessions.find(s => s.id === currentChatId);
+    if (currentSession && currentSession.messages.length === 0) {
+      return; // Do not create if current is empty
+    }
+    
+    document.getElementById('prompt-input').value = '';
+    document.getElementById('image-preview-container').style.display = 'none';
+    document.getElementById('image-preview').src = '';
+    currentImageBase64 = null;
+    
+    const newId = 'chat_' + Date.now();
+    const timeStr = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+    sessions.unshift({ id: newId, name: '新对话 ' + timeStr, messages: [] });
+    currentChatId = newId;
+    chrome.storage.local.set({ chatSessions: sessions, activeChatId: newId }, () => {
+      loadChatHistory();
+      renderChatMessages();
+      historyDropdown.style.display = 'none';
+    });
+  });
+});
+
+function deleteChat(id) {
+  chrome.storage.local.get(['chatSessions'], (res) => {
+    let sessions = res.chatSessions || [];
+    if (sessions.length <= 1) {
+      sessions[0].messages = [];
+      sessions[0].name = '新对话';
+    } else {
+      sessions = sessions.filter(s => s.id !== id);
+      if (currentChatId === id) {
+        currentChatId = sessions[0].id;
+      }
+    }
+    
+    // Purge tasks belonging to the deleted chat
+    chrome.runtime.sendMessage({ action: 'getTasks' }, (taskRes) => {
+      if (taskRes && taskRes.tasks) {
+        const remainingTasks = taskRes.tasks.filter(t => t.chatId !== id);
+        chrome.storage.local.set({ tasks: remainingTasks });
+      }
+    });
+
+    chrome.storage.local.set({ chatSessions: sessions, activeChatId: currentChatId }, () => {
+      loadChatHistory();
+    });
+  });
+}
+
+function renderChatMessages() {
+  chrome.storage.local.get(['chatSessions'], (res) => {
+    const sessions = res.chatSessions || [];
+    const session = sessions.find(s => s.id === currentChatId);
+    
+    chrome.runtime.sendMessage({ action: 'getTasks' }, (taskRes) => {
+      chatMessages.innerHTML = '';
+      
+      const tasks = (taskRes && taskRes.tasks) ? taskRes.tasks.filter(t => (t.chatId || 'default') === currentChatId) : [];
+      const messages = session && session.messages ? session.messages : [];
+      
+      const allItems = [];
+      messages.forEach((m, idx) => {
+        allItems.push({ type: 'message', data: m, time: m.timestamp || idx }); 
+      });
+      tasks.forEach(t => {
+        allItems.push({ type: 'task', data: t, time: t.id });
+      });
+      
+      allItems.sort((a, b) => a.time - b.time);
+      
+      allItems.forEach(item => {
+        if (item.type === 'message') {
+          const m = item.data;
+          const msgDiv = document.createElement('div');
+          msgDiv.className = 'msg ' + (m.isUser ? 'user' : 'ai');
+          
+          if (m.imgBase64) {
+            const img = document.createElement('img');
+            img.src = m.imgBase64;
+            img.className = 'msg-img';
+            msgDiv.appendChild(img);
+          }
+          
+          if (m.text) {
+            const textDiv = document.createElement('div');
+            textDiv.className = 'msg-content';
+            textDiv.textContent = m.text;
+            msgDiv.appendChild(textDiv);
+            
+            const actions = document.createElement('div');
+            actions.className = 'msg-actions';
+            
+            const quoteBtn = document.createElement('button');
+            quoteBtn.className = 'msg-action-btn';
+            quoteBtn.title = '引用';
+            quoteBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg>';
+            quoteBtn.onclick = () => {
+              setQuote(m.text);
+            };
+            actions.appendChild(quoteBtn);
+
+            if (!m.isUser) {
+              const copyBtn = document.createElement('button');
+              copyBtn.className = 'msg-action-btn';
+              copyBtn.title = '复制';
+              copyBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>';
+              copyBtn.onclick = () => {
+                copyText(m.text, copyBtn);
+              };
+              actions.appendChild(copyBtn);
+            }
+            
+            const delBtn = document.createElement('button');
+            delBtn.className = 'msg-action-btn';
+            delBtn.title = '删除记录';
+            delBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+            delBtn.onclick = () => {
+              chrome.storage.local.get(['chatSessions'], (res) => {
+                const sessions = res.chatSessions || [];
+                const session = sessions.find(s => s.id === currentChatId);
+                if (session) {
+                  const idx = session.messages.findIndex(msg => 
+                    (m.timestamp && msg.timestamp === m.timestamp && msg.text === m.text) || 
+                    (!m.timestamp && msg.text === m.text && msg.isUser === m.isUser)
+                  );
+                  if (idx > -1) {
+                    session.messages.splice(idx, 1);
+                    saveCurrentChat(session.messages);
+                    msgDiv.remove();
+                  }
+                }
+              });
+            };
+            actions.appendChild(delBtn);
+
+            msgDiv.appendChild(actions);
+          }
+          
+          chatMessages.appendChild(msgDiv);
+        } else {
+          const task = item.data;
+          let taskEl = document.createElement('div');
+          taskEl.id = 'task-' + task.id;
+          taskEl.className = 'msg ai';
+          taskEl.style.width = '100%';
+          taskEl.style.maxWidth = '100%';
+          chatMessages.appendChild(taskEl);
+        }
+      });
+      
+      document.getElementById('content').scrollTop = document.getElementById('content').scrollHeight;
+      
+      if (tasks.length > 0) {
+        renderTasks(tasks);
+      }
+    });
+  });
+}
+
+// Chat Logic
+const chatMessages = document.getElementById('chat-messages');
+let currentImageBase64 = null;
+
+function addMessage(text, isUser, imageBase64 = null) {
+  const timestamp = Date.now();
+  const msg = document.createElement('div');
+  msg.className = `msg ${isUser ? 'user' : 'ai'}`;
+  
+  if (imageBase64) {
+    const img = document.createElement('img');
+    img.src = imageBase64;
+    img.className = 'msg-img';
+    msg.appendChild(img);
+  }
+  
+  const content = document.createElement('div');
+  content.className = 'msg-content';
+  content.textContent = text;
+  msg.appendChild(content);
+  
+  if (text) {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+    
+    const quoteBtn = document.createElement('button');
+    quoteBtn.className = 'msg-action-btn';
+    quoteBtn.title = '引用';
+    quoteBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg>';
+    quoteBtn.onclick = () => {
+      setQuote(text);
+    };
+    actions.appendChild(quoteBtn);
+
+    if (!isUser) {
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'msg-action-btn';
+      copyBtn.title = '复制';
+      copyBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>';
+      copyBtn.onclick = () => {
+        copyText(text, copyBtn);
+      };
+      actions.appendChild(copyBtn);
+    }
+    
+    const delBtn = document.createElement('button');
+    delBtn.className = 'msg-action-btn';
+    delBtn.title = '删除记录';
+    delBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>';
+    delBtn.onclick = () => {
+      chrome.storage.local.get(['chatSessions'], (res) => {
+        const sessions = res.chatSessions || [];
+        const session = sessions.find(s => s.id === currentChatId);
+        if (session) {
+          let idx = session.messages.findIndex(m => m.timestamp === timestamp && m.text === text && m.isUser === isUser);
+          if (idx === -1) {
+            idx = session.messages.findLastIndex(m => m.text === text && m.isUser === isUser);
+          }
+          if (idx > -1) {
+            session.messages.splice(idx, 1);
+            saveCurrentChat(session.messages);
+            msg.remove();
+          }
+        }
+      });
+    };
+    actions.appendChild(delBtn);
+
+    msg.appendChild(actions);
+  }
+  
+  chatMessages.appendChild(msg);
+  
+  const scrollContent = document.getElementById('content');
+  if (scrollContent) scrollContent.scrollTop = scrollContent.scrollHeight;
+  
+  chrome.storage.local.get(['chatSessions'], (res) => {
+    const sessions = res.chatSessions || [{ id: 'default', name: '新对话', messages: [] }];
+    const session = sessions.find(s => s.id === currentChatId);
+    if (session) {
+      session.messages.push({ text, isUser, imgBase64: imageBase64, timestamp });
+      saveCurrentChat(session.messages);
+    }
+  });
+}
+
+loadChatHistory();
+
+// Listen for background analysis completion and tasks
+chrome.runtime.onMessage.addListener((req) => {
+  if (req.action === 'analysisComplete') {
+    renderLibrary();
+  }
+  if (req.action === 'tasksUpdated') {
+    renderTasks(req.tasks);
+  }
+});
+
+// Keep service worker alive while side panel is open
+setInterval(() => {
+  chrome.runtime.sendMessage({ action: 'ping' }).catch(() => {});
+}, 10000);
+
+function renderTasks(tasks) {
+  // Remove tasks that don't belong to currentChatId
+  Array.from(chatMessages.children).forEach(child => {
+    if (child.id && child.id.startsWith('task-')) {
+      const taskId = parseInt(child.id.replace('task-', ''));
+      const task = tasks.find(t => t.id === taskId);
+      const taskChatId = task ? (task.chatId || 'default') : null;
+      if (!task || taskChatId !== currentChatId) {
+        child.remove();
+      }
+    }
+  });
+
+  tasks.filter(t => (t.chatId || 'default') === currentChatId).forEach(task => {
+    let taskEl = document.getElementById('task-' + task.id);
+    if (!taskEl) {
+      taskEl = document.createElement('div');
+      taskEl.id = 'task-' + task.id;
+      taskEl.className = 'msg ai';
+      taskEl.style.width = '100%';
+      taskEl.style.maxWidth = '100%';
+      chatMessages.appendChild(taskEl);
+      const c = document.getElementById('content');
+      if (c) c.scrollTop = c.scrollHeight;
+    }
+    
+    let statusIndicator = '';
+    let contentHtml = '';
+    let cancelBtnHtml = '';
+
+    if (task.status === 'pending') {
+      statusIndicator = '<span style="color:#fbbf24; display:flex; align-items:center; gap:4px; animation: pulse-text 2s infinite;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> 排队中...</span>';
+      cancelBtnHtml = `<button class="btn btn-secondary cancel-task-btn" data-task-id="${task.id}" style="font-size: 12px; padding: 4px 8px; color: #ef4444; border-color: #fca5a5; background: transparent; display:flex; align-items:center; gap:4px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg> 终止</button>`;
+    } else if (task.status === 'processing') {
+      statusIndicator = '<span style="color:#6366f1; display:flex; align-items:center; gap:4px; animation: pulse-text 1.5s infinite;"><span style="display:flex; align-items:center; animation: spin-slow 2s linear infinite;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></span> 正在分析图片...</span>';
+      cancelBtnHtml = `<button class="btn btn-secondary cancel-task-btn" data-task-id="${task.id}" style="font-size: 12px; padding: 4px 8px; color: #ef4444; border-color: #fca5a5; background: transparent; display:flex; align-items:center; gap:4px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg> 终止</button>`;
+    } else if (task.status === 'error') {
+      statusIndicator = '<span style="color:#ef4444; display:flex; align-items:center; gap:4px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> 分析失败</span>';
+      contentHtml = `<div style="font-size: 12px; color: #ef4444; background: #fef2f2; padding: 8px; border-radius: 6px; margin-top: 4px;">${task.error}</div>`;
+      cancelBtnHtml = `<button class="btn btn-secondary delete-task-btn" data-task-id="${task.id}" style="font-size: 12px; padding: 4px 8px; color: #9ca3af; border: none; background: transparent; display:flex; align-items:center; gap:4px; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9ca3af'" title="删除记录"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg></button>`;
+    } else if (task.status === 'cancelled') {
+      statusIndicator = '<span style="color:#6b7280; display:flex; align-items:center; gap:4px;"><svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2" ry="2"/></svg> 已终止</span>';
+      cancelBtnHtml = `<button class="btn btn-secondary delete-task-btn" data-task-id="${task.id}" style="font-size: 12px; padding: 4px 8px; color: #9ca3af; border: none; background: transparent; display:flex; align-items:center; gap:4px; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9ca3af'" title="删除记录"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg></button>`;
+    } else if (task.status === 'completed') {
+      let shortModel = task.model || '';
+      if (shortModel.includes('Ollama (')) {
+        shortModel = shortModel.replace('Ollama (', '').replace(')', '');
+      } else if (shortModel.includes('Gemini')) {
+        shortModel = 'Gemini';
+      }
+      if (shortModel.length > 12) {
+        shortModel = shortModel.substring(0, 10) + '..';
+      }
+      const modelBadge = shortModel ? `<span style="display:inline-flex; align-items:center; margin-left: 4px; font-size: 10px; background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 1px 4px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.2); font-weight: normal; max-width: 80px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 16px; line-height: 14px;" title="${task.model}">${shortModel}</span>` : '';
+      statusIndicator = `<span style="color:#10b981; display:flex; align-items:center; gap:4px; flex-wrap: nowrap; overflow:hidden;"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="flex-shrink:0;"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg> <span style="white-space:nowrap; flex-shrink:0;">分析完成！</span>${modelBadge}</span>`;
+      cancelBtnHtml = `<button class="btn btn-secondary delete-task-btn" data-task-id="${task.id}" style="font-size: 12px; padding: 4px 8px; color: #9ca3af; border: none; background: transparent; display:flex; align-items:center; gap:4px; transition: color 0.2s;" onmouseover="this.style.color='#ef4444'" onmouseout="this.style.color='#9ca3af'" title="删除记录"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2M10 11v6M14 11v6"/></svg></button>`;
+      const d = task.resultData.zh || task.resultData;
+      let keywords = '';
+      if (typeof d === 'string') {
+        keywords = d;
+      } else if (typeof d === 'object' && d !== null) {
+        keywords = Object.values(d).join('\n');
+      }
+      
+      if (!keywords || !keywords.trim()) {
+        keywords = '模型未能提取有效信息。\n\n原因分析：该模型可能是纯文本大语言模型，缺乏「图像视觉(Vision)」测算能力。在复杂架构中"严格不臆造"的指令下，它选择了跳过所有内容。请尝试更换带有视觉能力的模型（如 qwen-vl, llava）！';
+      }
+      
+      contentHtml = `
+        <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">提取的提示词：</div>
+        <div style="margin-top: 4px; padding: 8px; background: rgba(255,255,255,0.5); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 6px; color: var(--text-main); max-height: 100px; overflow-y: auto; white-space: pre-wrap; font-size: 12px; border: 1px solid var(--border-color); transition: var(--transition-liquid);">${keywords}</div>
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
+          <button class="btn btn-glass-purple copy-task-btn" data-text="${encodeURIComponent(keywords)}" style="flex: 1; padding: 6px; font-size: 12px; white-space: nowrap;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> 复制</button>
+          <button class="btn btn-glass-purple quote-task-btn" data-text="${encodeURIComponent(keywords)}" style="flex: 1; padding: 6px; font-size: 12px; white-space: nowrap;" title="引用到对话（用于联动）"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"/></svg> 引用</button>
+          <button class="btn btn-glass-purple rewrite-task-btn" data-text="${encodeURIComponent(keywords)}" style="flex: 1; padding: 6px; font-size: 12px; white-space: nowrap;" title="一键换装：自动清除提示词中的服装描述，并添加“穿着图中的服饰”"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a4 4 0 0 1-8 0L3.62 3.46a2 2 0 0 0-1.34 2.23l.58 3.47a1 1 0 0 0 .99.84H6v10c0 1.1.9 2 2 2h8a2 2 0 0 0 2-2V10h2.15a1 1 0 0 0 .99-.84l.58-3.47a2 2 0 0 0-1.34-2.23z"/></svg> 换装</button>
+        </div>
+      `;
+    }
+    
+    taskEl.innerHTML = `
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; gap: 12px; align-items: center;">
+          <img src="${task.dataUrl}" class="task-img-hover" style="width: 40px; height: 40px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color);">
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 600; margin-bottom: 2px; font-size: 13px;">图片分析任务 #${task.id}</div>
+            <div style="font-size: 12px; line-height: 1.5;">${statusIndicator}</div>
+          </div>
+          ${cancelBtnHtml}
+        </div>
+        ${contentHtml ? `<div style="display: flex; flex-direction: column;">${contentHtml}</div>` : ''}
+      </div>
+    `;
+  });
+}
+
+function executeRewrite(text) {
+  const instruction = `请一键清除以下提示词中所有关于服装和鞋子的描述（款式、颜色、形态等），并在提示词最前面增加“图中的模特穿着图中的服饰和鞋子”。直接输出修改后的完整提示词，不要包含任何其他解释或多余的话。\n\n原始提示词：\n${text}`;
+  
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const chatTab = document.querySelector('.tab[data-target="chat-view"]');
+  if (chatTab) chatTab.classList.add('active');
+  const chatView = document.getElementById('chat-view');
+  if (chatView) chatView.classList.add('active');
+  
+  const modalOverlay = document.getElementById('modal-overlay');
+  if (modalOverlay) modalOverlay.style.display = 'none';
+
+  addMessage(instruction, true);
+  
+  const loadingId = 'loading-' + Date.now();
+  const loadingMsg = document.createElement('div');
+  loadingMsg.className = 'msg ai';
+  loadingMsg.id = loadingId;
+  loadingMsg.innerHTML = '<div style="display:flex; align-items:center; gap:8px;"><span style="display:inline-block; animation:spin-slow 2s linear infinite;"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" opacity="0.3"/><path d="M12 2v3c3.86 0 7 3.14 7 7h3c0-5.52-4.48-10-10-10z"/></svg></span> 正在重写换装提示词...</div>';
+  chatMessages.appendChild(loadingMsg);
+  
+  const content = document.getElementById('content');
+  if (content) content.scrollTop = content.scrollHeight;
+
+  chrome.runtime.sendMessage({ action: 'rewritePrompt', prompt: text }, (response) => {
+    if (chrome.runtime.lastError) {
+      const loadingEl = document.getElementById(loadingId);
+      if (loadingEl) loadingEl.remove();
+      addMessage('扩展后台服务已断开或超时，请重试', false);
+      return;
+    }
+    const loadingEl = document.getElementById(loadingId);
+    if (loadingEl) loadingEl.remove();
+    
+    if (response && response.data) {
+      addMessage(response.data, false);
+    } else if (response && response.error) {
+      addMessage('错误: ' + response.error, false);
+      showToast(response.error, 'error');
+    }
+  });
+}
+
+chatMessages.addEventListener('click', (e) => {
+  if (e.target.closest('.cancel-task-btn')) {
+    const taskId = parseInt(e.target.closest('.cancel-task-btn').dataset.taskId);
+    chrome.runtime.sendMessage({ action: 'cancelTask', taskId });
+  }
+  if (e.target.closest('.delete-task-btn')) {
+    const taskId = parseInt(e.target.closest('.delete-task-btn').dataset.taskId);
+    chrome.runtime.sendMessage({ action: 'deleteTask', taskId });
+  }
+  if (e.target.closest('.copy-task-btn')) {
+    const btn = e.target.closest('.copy-task-btn');
+    const text = decodeURIComponent(btn.dataset.text);
+    copyText(text, btn);
+  }
+  if (e.target.closest('.quote-task-btn')) {
+    const btn = e.target.closest('.quote-task-btn');
+    const text = decodeURIComponent(btn.dataset.text);
+    setQuote(text);
+  }
+  if (e.target.closest('.rewrite-task-btn')) {
+    const btn = e.target.closest('.rewrite-task-btn');
+    const text = decodeURIComponent(btn.dataset.text);
+    executeRewrite(text);
+  }
+});
+
+// Setup drag and drop for chat view
+const chatView = document.getElementById('chat-view');
+chatView.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    chatView.style.border = '2px dashed var(--brand-blue)';
+    chatView.style.background = 'rgba(120, 140, 255, 0.1)';
+});
+chatView.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    chatView.style.border = 'none';
+    chatView.style.background = 'transparent';
+});
+chatView.addEventListener('drop', (e) => {
+    e.preventDefault();
+    chatView.style.border = 'none';
+    chatView.style.background = 'transparent';
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            currentImageBase64 = event.target.result;
+            imagePreview.src = currentImageBase64;
+            imagePreviewContainer.style.display = 'block';
+            promptInput.placeholder = '图片已加载，您可以直接发送分析任务';
+            
+            // Generate a formal enqueueTask rather than a loose Chat message
+            chrome.runtime.sendMessage({ action: 'enqueueTask', dataUrl: currentImageBase64 }, (response) => {
+                if (response && response.success) {
+                    removeImage();
+                    setTimeout(() => { 
+                      const c = document.getElementById('content');
+                      if (c) c.scrollTop = c.scrollHeight; 
+                    }, 100);
+                }
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+function sendChat() {
+  const msg = promptInput.value.trim();
+  if (!msg && !currentImageBase64 && !currentQuoteText) return;
+  
+  let displayMsg = msg || '提取图片中的提示词元素。';
+  let fullMsg = msg || '分析图片';
+  if (currentQuoteText) {
+    fullMsg = `> ${currentQuoteText}\n\n${fullMsg}`;
+  }
+  
+  addMessage(displayMsg, true, currentImageBase64);
+  
+  const payloadImage = currentImageBase64;
+  
+  promptInput.value = '';
+  promptInput.style.height = 'auto';
+  removeImage();
+  removeQuote();
+  
+  const loadingId = 'loading-' + Date.now();
+  const loadingMsg = document.createElement('div');
+  loadingMsg.className = 'msg ai';
+  loadingMsg.id = loadingId;
+  loadingMsg.textContent = '思考中...';
+  
+  const firstTask = Array.from(chatMessages.children).find(c => c.id && c.id.startsWith('task-'));
+  if (firstTask) {
+    chatMessages.insertBefore(loadingMsg, firstTask);
+  } else {
+    chatMessages.appendChild(loadingMsg);
+  }
+  
+  const scrollContent = document.getElementById('content');
+  if (scrollContent) scrollContent.scrollTop = scrollContent.scrollHeight;
+
+  // Build context from current chat tasks
+  chrome.runtime.sendMessage({ action: 'getTasks' }, (res) => {
+    const tasks = res.tasks || [];
+    const currentChatTasks = tasks.filter(t => t.chatId === currentChatId && t.status === 'completed');
+    const recent = currentChatTasks.slice(-2).map(t => {
+      const d = t.resultData.zh || t.resultData;
+      if (typeof d === 'string') return d;
+      if (typeof d === 'object' && d !== null) return Object.values(d).join('\n');
+      return '';
+    }).join('\n---\n');
+    
+    const contextMsg = recent ? `参考最近提取的提示词上下文：\n${recent}\n\n用户问题：${fullMsg}` : fullMsg;
+
+    chrome.runtime.sendMessage({ action: 'chat', message: contextMsg, image: payloadImage ? payloadImage.split(',')[1] : null }, (response) => {
+      const loadingEl = document.getElementById(loadingId);
+      if (loadingEl) loadingEl.remove();
+      
+      if (response && response.data) {
+        addMessage(response.data, false);
+      } else if (response && response.error) {
+        addMessage('错误: ' + response.error, false);
+      }
+    });
+  });
+}
+
+promptInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChat();
+  }
+});
+
+document.getElementById('send-btn').addEventListener('click', sendChat);
+
+document.getElementById('optimize-btn').addEventListener('click', () => {
+  const original = promptInput.value;
+  if (!original) return;
+  
+  promptInput.value = '正在智能优化...';
+  chrome.runtime.sendMessage({ action: 'smartOptimize', prompt: original }, (response) => {
+    if (response && response.data) {
+      promptInput.value = response.data;
+      promptInput.dispatchEvent(new Event('input'));
+    } else {
+      promptInput.value = original;
+      showToast(response?.error || '优化失败', 'error');
+    }
+  });
+});
+
+// Image Upload Logic
+const fileUpload = document.getElementById('file-upload');
+const uploadBtn = document.getElementById('upload-btn');
+const imagePreviewContainer = document.getElementById('image-preview-container');
+const imagePreview = document.getElementById('image-preview');
+const removeImageBtn = document.getElementById('remove-image');
+
+uploadBtn.addEventListener('click', () => {
+  fileUpload.click();
+});
+
+fileUpload.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      currentImageBase64 = event.target.result;
+      imagePreview.src = currentImageBase64;
+      imagePreviewContainer.style.display = 'block';
+    };
+    reader.readAsDataURL(file);
+  }
+});
+
+function removeImage() {
+  currentImageBase64 = null;
+  imagePreview.src = '';
+  imagePreviewContainer.style.display = 'none';
+  fileUpload.value = '';
+}
+
+removeImageBtn.addEventListener('click', removeImage);
+
+const searchInput = document.getElementById('library-search');
+if (searchInput) {
+  searchInput.addEventListener('input', (e) => {
+    renderLibrary(e.target.value.trim());
+  });
+}
+
+const libTabLocal = document.getElementById('lib-tab-local');
+const libTabOnline = document.getElementById('lib-tab-online');
+
+if (libTabLocal && libTabOnline) {
+  libTabLocal.addEventListener('click', () => {
+    currentLibraryTab = 'local';
+    libTabLocal.style.background = 'var(--accent-blue)';
+    libTabLocal.style.color = 'white';
+    libTabLocal.style.boxShadow = '0 2px 8px rgba(106,168,255,0.3)';
+    libTabOnline.style.background = 'transparent';
+    libTabOnline.style.color = 'var(--text-muted)';
+    libTabOnline.style.boxShadow = 'none';
+    renderLibrary(searchInput ? searchInput.value.trim() : '');
+  });
+  
+  libTabOnline.addEventListener('click', () => {
+    currentLibraryTab = 'online';
+    libTabOnline.style.background = 'var(--accent-blue)';
+    libTabOnline.style.color = 'white';
+    libTabOnline.style.boxShadow = '0 2px 8px rgba(106,168,255,0.3)';
+    libTabLocal.style.background = 'transparent';
+    libTabLocal.style.color = 'var(--text-muted)';
+    libTabLocal.style.boxShadow = 'none';
+    renderLibrary(searchInput ? searchInput.value.trim() : '');
+  });
+}
+
+const exportCsvBtn = document.getElementById('export-csv-btn');
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener('click', () => {
+    chrome.storage.local.get(['promptHistory'], (res) => {
+      const history = res.promptHistory || [];
+      if (history.length === 0) return showToast('没有可导出的数据', 'error');
+      
+      let csvContent = "data:text/csv;charset=utf-8,\uFEFF图片URL,提示词\n";
+      
+      history.forEach(item => {
+        const d = item.data.zh || item.data;
+        let keywords = '';
+        if (typeof d === 'string') {
+          keywords = d;
+        } else if (typeof d === 'object' && d !== null) {
+          keywords = Object.values(d).join(' ');
+        }
+        
+        // Escape quotes and wrap in quotes to handle commas and newlines
+        const escapedKeywords = '"' + keywords.replace(/"/g, '""') + '"';
+        const escapedUrl = '"' + item.url.replace(/"/g, '""') + '"';
+        
+        csvContent += `${escapedUrl},${escapedKeywords}\n`;
+      });
+      
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", "ai_prompts.csv");
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    });
+  });
+}
+
+// Downloader Logic
+const urlParams = new URLSearchParams(window.location.search);
+const isNewTab = urlParams.get('view') === 'downloader';
+let activeExtractTabId = null;
+
+if (isNewTab) {
+   document.getElementById('nav').style.display = 'none';
+   document.getElementById('action-bar-container').style.display = 'none';
+   document.getElementById('chat-view').style.display = 'none';
+   
+   const dlView = document.getElementById('downloader-view');
+   dlView.style.display = 'flex';
+   
+   document.body.style.background = '#f5f7fb';
+   
+   // We passed the target tab Id
+   const tz = urlParams.get('tabId');
+   if (tz) activeExtractTabId = parseInt(tz, 10);
+   fetchImagesFromActiveTab();
+}
+
+document.getElementById('open-downloader-btn').addEventListener('click', () => {
+    openModal('downloader-view', true);
+    fetchImagesFromActiveTab();
+});
+
+let dlImages = [];
+
+function setupDlCustomSelects() {
+  const formatDisplay = document.getElementById('dl-format-display');
+  const formatOptions = document.getElementById('dl-format-options');
+  const formatSelect = document.getElementById('dl-format-filter');
+  
+  if (formatDisplay && formatOptions) {
+    formatDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      formatOptions.classList.toggle('open');
+      formatDisplay.classList.toggle('open');
+      const sizeOptions = document.getElementById('dl-size-options');
+      if (sizeOptions) {
+        sizeOptions.classList.remove('open');
+        document.getElementById('dl-size-display').classList.remove('open');
+      }
+    });
+    const opts = formatOptions.querySelectorAll('.custom-option');
+    opts.forEach(opt => {
+      opt.addEventListener('click', () => {
+        formatSelect.value = opt.dataset.value;
+        formatSelect.dispatchEvent(new Event('change'));
+        formatDisplay.textContent = opt.textContent;
+        formatOptions.classList.remove('open');
+        formatDisplay.classList.remove('open');
+        updateCustomOptionsSelection(formatOptions, opt.dataset.value);
+      });
+    });
+  }
+
+  const sizeDisplay = document.getElementById('dl-size-display');
+  const sizeOptions = document.getElementById('dl-size-options');
+  const sizeSelect = document.getElementById('dl-size-filter');
+  
+  if (sizeDisplay && sizeOptions) {
+    sizeDisplay.addEventListener('click', (e) => {
+      e.stopPropagation();
+      sizeOptions.classList.toggle('open');
+      sizeDisplay.classList.toggle('open');
+      if (formatOptions) {
+        formatOptions.classList.remove('open');
+        formatDisplay.classList.remove('open');
+      }
+    });
+    const opts = sizeOptions.querySelectorAll('.custom-option');
+    opts.forEach(opt => {
+      opt.addEventListener('click', () => {
+        sizeSelect.value = opt.dataset.value;
+        sizeSelect.dispatchEvent(new Event('change'));
+        sizeDisplay.textContent = opt.textContent;
+        sizeOptions.classList.remove('open');
+        sizeDisplay.classList.remove('open');
+        updateCustomOptionsSelection(sizeOptions, opt.dataset.value);
+      });
+    });
+  }
+}
+
+setupDlCustomSelects();
+
+function fetchImagesFromActiveTab() {
+  if (activeExtractTabId) {
+     executeExtract(activeExtractTabId);
+  } else {
+     chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if(tabs[0]) executeExtract(tabs[0].id);
+     });
+  }
+}
+
+function executeExtract(tabId) {
+  chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    func: () => {
+      const media = new Map();
+      const addedBases = new Set();
+      const addMedia = (urlStr, width, height) => {
+          if (!urlStr || typeof urlStr !== 'string') return;
+          try {
+             let rawUrl = urlStr;
+             if (urlStr.startsWith('//')) {
+                 rawUrl = window.location.protocol + urlStr;
+             } else if (!urlStr.startsWith('http') && !urlStr.startsWith('data:image')) {
+                 rawUrl = new URL(urlStr, window.location.href).href;
+             }
+             
+             if (rawUrl.startsWith('http') || rawUrl.startsWith('data:image')) {
+                 let base = rawUrl.split('?')[0];
+                 
+                 // If it's a Xiaohongshu CDN link, group by URL path to deduplicate across different CDN hosts
+                 if (base.includes('.xhscdn.com/')) {
+                     try {
+                        const parsed = new URL(base);
+                        base = 'xhscdn' + parsed.pathname;
+                     } catch(e) {}
+                 }
+
+                 // Skip duplicate base URLs to avoid showing the same video/image with different auth tokens
+                 // But bypass for data:image and local blobs just in case
+                 if (!rawUrl.startsWith('data:') && addedBases.has(base)) return;
+                 addedBases.add(base);
+
+                 if (!media.has(rawUrl)) {
+                     media.set(rawUrl, { url: rawUrl, width: width || 0, height: height || 0 });
+                 } else {
+                     if (width > media.get(rawUrl).width) {
+                         media.set(rawUrl, { url: rawUrl, width, height });
+                     }
+                 }
+             }
+          } catch(e) {}
+      };
+
+      const getBestImageUrl = (img) => {
+          let bestSrc = img.getAttribute('src') || img.src;
+          let isHiRes = false;
+          const srcset = img.getAttribute('srcset');
+          if (srcset) {
+              const parts = srcset.split(',').map(p => p.trim());
+              if (parts.length > 0) {
+                  const largest = parts.reduce((prev, curr) => {
+                     const currSize = parseInt(curr.split(' ')[1] || '0', 10);
+                     const prevSize = parseInt(prev.split(' ')[1] || '0', 10);
+                     return currSize > prevSize ? curr : prev;
+                  }, parts[0]);
+                  bestSrc = largest.split(' ')[0];
+                  isHiRes = true;
+              }
+          }
+          const opts = ['data-src', 'data-original', 'data-large', 'data-zoom-src', 'data-highres', 'data-hires-src', 'data-objurl'];
+          for (let attr of opts) {
+              let val = img.getAttribute(attr);
+              if (val && (val.includes('http') || val.includes('//'))) {
+                  bestSrc = val; 
+                  isHiRes = true;
+                  break;
+              }
+          }
+          if (bestSrc && bestSrc.startsWith('//')) bestSrc = window.location.protocol + bestSrc;
+          if (bestSrc && bestSrc.includes('twimg.com')) {
+              bestSrc = bestSrc.replace(/name=[a-z0-9_]+/, 'name=orig');
+              isHiRes = true;
+          }
+          if (bestSrc && (bestSrc.includes('xiaohongshu.com') || bestSrc.includes('xhscdn.com'))) {
+             bestSrc = bestSrc.split('?')[0].split('!')[0];
+             isHiRes = true;
+          }
+          if (bestSrc) bestSrc = bestSrc.replace(/_\d+x\d+.*?\.jpg$/, '.jpg').replace(/_\d+x\d+.*?\.png$/, '.png');
+          return { url: bestSrc, isHiRes };
+      };
+
+      document.querySelectorAll('img').forEach(img => {
+          const res = getBestImageUrl(img);
+          const rect = img.getBoundingClientRect();
+          let w = img.naturalWidth || rect.width || img.width || 0;
+          let h = img.naturalHeight || rect.height || img.height || 0;
+          
+          if (res.isHiRes && w < 800) {
+              w = Math.max(w, 1000);
+              h = Math.max(h, 1000);
+          }
+          addMedia(res.url, w, h);
+      });
+      document.querySelectorAll('video').forEach(vid => {
+          let vsrc = vid.getAttribute('src') || vid.src;
+          if (vsrc && !vsrc.startsWith('blob:')) addMedia(vsrc, vid.videoWidth || vid.width || 1080, vid.videoHeight || vid.height || 1920);
+          vid.querySelectorAll('source').forEach(src => {
+              let s = src.getAttribute('src') || src.src;
+              if (s && !s.startsWith('blob:')) addMedia(s, vid.videoWidth || vid.width || 1080, vid.videoHeight || vid.height || 1920);
+          });
+      });
+      
+      // Universal meta video extraction
+      document.querySelectorAll('meta[property="og:video"], meta[property="og:video:url"], meta[property="og:video:secure_url"], meta[name="twitter:player:stream"], meta[itemprop="contentUrl"]').forEach(meta => {
+          let content = meta.getAttribute('content');
+          if (content && !content.startsWith('blob:') && (content.startsWith('http') || content.startsWith('//'))) {
+              let url = content.startsWith('//') ? window.location.protocol + content : content;
+              addMedia(url, 1080, 1920);
+          }
+      });
+      
+      // Xiaohongshu specific extraction for mp4
+      if (window.location.host.includes('xiaohongshu.com')) {
+          document.querySelectorAll('script').forEach(script => {
+              const text = script.innerHTML;
+              if (text.includes('window.__INITIAL_STATE__')) {
+                  try {
+                      let stateStr = text.split('window.__INITIAL_STATE__=')[1];
+                      if (stateStr) {
+                         stateStr = stateStr.replace(/<\/script>.*$/is, '').replace(/;$/, '').trim();
+                         const state = JSON.parse(stateStr.replace(/undefined/g, 'null'));
+                         const findVids = (obj) => {
+                             if (!obj || typeof obj !== 'object') return;
+                              if (typeof obj.masterUrl === 'string') addMedia(obj.masterUrl, obj.width || 1080, obj.height || 1920);
+                              else if (typeof obj.videoUrl === 'string') addMedia(obj.videoUrl, obj.width || 1080, obj.height || 1920);
+                              Object.values(obj).forEach(val => findVids(val));
+                         };
+                         findVids(state);
+                      }
+                  } catch(e) {}
+              }
+          });
+      }
+
+      document.querySelectorAll('*').forEach(el => {
+          const bg = window.getComputedStyle(el).backgroundImage;
+          if (bg && bg !== 'none' && bg.includes('url(')) {
+              let url = bg.slice(bg.indexOf('url(') + 4, bg.indexOf(')')).replace(/["']/g, '');
+              addMedia(url, el.clientWidth, el.clientHeight);
+          }
+      });
+      return Array.from(media.values());
+    }
+  }, (results) => {
+    if (results && results[0] && results[0].result) {
+      dlImages = results[0].result.map(item => ({ url: item.url, width: item.width, height: item.height, selected: false }));
+      renderDownloaderGrid();
+    }
+  });
+}
+
+function checkMatch(img) {
+   const formatFilter = document.getElementById('dl-format-filter').value;
+   const sizeFilter = parseInt(document.getElementById('dl-size-filter').value, 10);
+   const lowerUrl = img.url.toLowerCase();
+   
+   let matchFormat = false;
+   if (formatFilter === 'all') matchFormat = true;
+   else if (formatFilter === 'jpg' && (lowerUrl.includes('.jpg') || lowerUrl.includes('.jpeg'))) matchFormat = true;
+   else if (formatFilter === 'png' && lowerUrl.includes('.png')) matchFormat = true;
+   else if (formatFilter === 'webp' && lowerUrl.includes('.webp')) matchFormat = true;
+   else if (formatFilter === 'mp4' && (lowerUrl.includes('.mp4') || lowerUrl.includes('sns-video'))) matchFormat = true;
+   else if (formatFilter === 'other') {
+       const isJpg = lowerUrl.includes('.jpg') || lowerUrl.includes('.jpeg');
+       const isPng = lowerUrl.includes('.png');
+       const isMp4 = lowerUrl.includes('.mp4') || lowerUrl.includes('sns-video');
+       if (!isJpg && !isPng && !isMp4) matchFormat = true;
+   }
+   
+   if (!matchFormat) return false;
+   
+   if (sizeFilter === 0) return true;
+   const maxDim = Math.max(img.width || 0, img.height || 0);
+   return maxDim >= sizeFilter;
+}
+
+let currentEnlargeIndex = -1;
+let visibleImages = [];
+
+function renderDownloaderGrid() {
+   const grid = document.getElementById('downloader-grid');
+   grid.innerHTML = '';
+   let count = 0;
+   visibleImages = [];
+   
+   dlImages.forEach((img, idx) => {
+      if (!checkMatch(img)) return;
+      
+      visibleImages.push(img);
+      const vIdx = visibleImages.length - 1;
+      
+      const item = document.createElement('div');
+      item.style.position = 'relative';
+      item.style.paddingTop = '100%';
+      item.style.borderRadius = '8px';
+      item.style.overflow = 'hidden';
+      item.style.cursor = 'pointer';
+      item.style.boxSizing = 'border-box';
+      item.style.border = img.selected ? '2px solid var(--accent-blue)' : '2px solid transparent';
+      item.style.transition = 'var(--transition-liquid)';
+      
+      if (img.url.toLowerCase().includes('.mp4') || img.url.toLowerCase().includes('sns-video')) {
+          const videoEl = document.createElement('video');
+          videoEl.src = img.url;
+          videoEl.style.position = 'absolute';
+          videoEl.style.top = '0';
+          videoEl.style.left = '0';
+          videoEl.style.width = '100%';
+          videoEl.style.height = '100%';
+          videoEl.style.objectFit = 'cover';
+          videoEl.muted = true;
+          videoEl.playsInline = true;
+          videoEl.setAttribute('playsinline', 'true');
+          videoEl.autoplay = true;
+          videoEl.loop = true;
+          item.appendChild(videoEl);
+      } else {
+          const imgEl = document.createElement('img');
+          imgEl.src = img.url;
+          imgEl.style.position = 'absolute';
+          imgEl.style.top = '0';
+          imgEl.style.left = '0';
+          imgEl.style.width = '100%';
+          imgEl.style.height = '100%';
+          imgEl.style.objectFit = 'cover';
+          item.appendChild(imgEl);
+      }
+      
+      const checkEl = document.createElement('div');
+      checkEl.style.position = 'absolute';
+      checkEl.style.top = '4px';
+      checkEl.style.left = '4px';
+      checkEl.style.width = '20px';
+      checkEl.style.height = '20px';
+      checkEl.style.borderRadius = '50%';
+      checkEl.style.background = img.selected ? 'var(--accent-blue)' : 'rgba(0,0,0,0.5)';
+      checkEl.style.border = '2px solid white';
+      checkEl.style.display = 'flex';
+      checkEl.style.alignItems = 'center';
+      checkEl.style.justifyContent = 'center';
+      checkEl.style.zIndex = '5';
+      if (img.selected) {
+         checkEl.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      }
+      
+      checkEl.addEventListener('click', (e) => {
+         e.stopPropagation();
+         img.selected = !img.selected;
+         renderDownloaderGrid();
+      });
+      
+      item.appendChild(checkEl);
+      
+      item.addEventListener('click', () => {
+         openEnlargeModal(vIdx);
+      });
+      
+      grid.appendChild(item);
+      if (img.selected) count++;
+   });
+   
+   document.getElementById('dl-selected-count').textContent = count;
+}
+
+function openEnlargeModal(vIdx) {
+  if (vIdx < 0 || vIdx >= visibleImages.length) return;
+  currentEnlargeIndex = vIdx;
+  const img = visibleImages[vIdx];
+  const modal = document.getElementById('image-modal');
+  const imgEl = document.getElementById('image-modal-img');
+  const videoEl = document.getElementById('image-modal-video');
+  const copyTextEl = document.getElementById('image-modal-copy-text');
+  
+  if (img.url.toLowerCase().includes('.mp4') || img.url.toLowerCase().includes('sns-video')) {
+      imgEl.style.display = 'none';
+      videoEl.style.display = 'block';
+      videoEl.src = img.url;
+      if (copyTextEl) copyTextEl.textContent = '下载视频';
+  } else {
+      videoEl.style.display = 'none';
+      imgEl.style.display = 'block';
+      imgEl.src = img.url;
+      if (copyTextEl) copyTextEl.textContent = '复制图像';
+  }
+  
+  modal.style.display = 'flex';
+}
+
+document.getElementById('image-modal-close').addEventListener('click', () => {
+  document.getElementById('image-modal').style.display = 'none';
+  document.getElementById('image-modal-video').pause();
+});
+
+document.getElementById('image-modal-prev').addEventListener('click', () => {
+  openEnlargeModal(currentEnlargeIndex - 1);
+});
+
+document.getElementById('image-modal-next').addEventListener('click', () => {
+  openEnlargeModal(currentEnlargeIndex + 1);
+});
+
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('image-modal').style.display === 'flex') {
+    if (e.key === 'ArrowLeft') {
+       openEnlargeModal(currentEnlargeIndex - 1);
+    } else if (e.key === 'ArrowRight') {
+       openEnlargeModal(currentEnlargeIndex + 1);
+    } else if (e.key === 'Escape') {
+       document.getElementById('image-modal').style.display = 'none';
+       document.getElementById('image-modal-video').pause();
+    }
+  }
+});
+
+document.getElementById('image-modal-copy').addEventListener('click', async () => {
+  if (currentEnlargeIndex >= 0 && currentEnlargeIndex < visibleImages.length) {
+    const imgData = visibleImages[currentEnlargeIndex];
+    const url = imgData.url;
+    const btn = document.getElementById('image-modal-copy');
+    const oldHtml = btn.innerHTML;
+    
+    try {
+        if (url.toLowerCase().includes('.mp4') || url.toLowerCase().includes('sns-video')) {
+            await downloadImage(url);
+            btn.innerHTML = '<span style="display:flex; align-items:center; gap:8px;">☑ 已开始下载</span>';
+        } else {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => {
+                    fetch(url, { mode: 'cors' })
+                        .then(res => res.blob())
+                        .then(blob => {
+                            const blobUrl = URL.createObjectURL(blob);
+                            img.onload = resolve;
+                            img.onerror = () => {
+                                // Last fallback if blob URL fails
+                                reject(new Error('Cross-Origin/Fetch failed'));
+                            };
+                            img.src = blobUrl;
+                        }).catch(reject);
+                };
+                img.src = url;
+            });
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth || img.width;
+            canvas.height = img.naturalHeight || img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+            await navigator.clipboard.write([
+                new ClipboardItem({ 'image/png': blob })
+            ]);
+            btn.innerHTML = '<span style="display:flex; align-items:center; gap:8px;">☑ 已复制图片</span>';
+        }
+    } catch (err) {
+        console.error('Copy failed:', err);
+        // Fallback to text url copy if blob copy fails (e.g. security block or canvas taint)
+        await navigator.clipboard.writeText(url).catch(()=>console.log('Final text copy fail'));
+        btn.innerHTML = '<span style="display:flex; align-items:center; gap:8px;">☑ 已复制资源链接</span>';
+    }
+    
+    btn.style.transform = 'scale(0.95)';
+    setTimeout(() => {
+        btn.style.transform = 'scale(1)';
+    }, 150);
+    
+    setTimeout(() => btn.innerHTML = oldHtml, 2000);
+  }
+});
+
+document.getElementById('dl-format-filter').addEventListener('change', renderDownloaderGrid);
+document.getElementById('dl-size-filter').addEventListener('change', renderDownloaderGrid);
+
+document.getElementById('dl-select-all').addEventListener('click', () => {
+   dlImages.forEach(img => {
+       if(checkMatch(img)) img.selected = true;
+   });
+   renderDownloaderGrid();
+});
+
+document.getElementById('dl-invert-select').addEventListener('click', () => {
+   dlImages.forEach(img => {
+       if(checkMatch(img)) img.selected = !img.selected;
+   });
+   renderDownloaderGrid();
+});
+
+document.getElementById('dl-batch-btn').addEventListener('click', async () => {
+   const selected = dlImages.filter(img => img.selected);
+   if (selected.length === 0) return showToast('请先选择文件', 'error');
+   
+   showToast(`开始打包 ${selected.length} 个文件，请稍候...`, 'info');
+   document.getElementById('dl-batch-btn').disabled = true;
+   document.getElementById('dl-batch-btn').innerHTML = '打包中... <div class="ai-status-spinner" style="display:inline-block; width:12px; height:12px; margin-left:8px; border-width: 2px;"></div>';
+
+   try {
+     const zip = new JSZip();
+     let successCount = 0;
+     
+     for (let i = 0; i < selected.length; i++) {
+        const img = selected[i];
+        
+        try {
+           const res = await fetch(img.url, { cache: 'force-cache' });
+           if (!res.ok) continue;
+           
+           const lowerUrl = img.url.toLowerCase();
+           let ext = 'jpg';
+           // URL baseline
+           if (lowerUrl.includes('.png')) ext = 'png';
+           if (lowerUrl.includes('.webp')) ext = 'webp';
+           if (lowerUrl.includes('.gif')) ext = 'gif';
+           if (lowerUrl.includes('.svg')) ext = 'svg';
+           if (lowerUrl.includes('.mp4')) ext = 'mp4';
+           
+           // Header override (more accurate)
+           const contentType = (res.headers.get('content-type') || '').toLowerCase();
+           if (contentType.includes('image/gif')) ext = 'gif';
+           else if (contentType.includes('image/png')) ext = 'png';
+           else if (contentType.includes('image/webp')) ext = 'webp';
+           else if (contentType.includes('video/mp4')) ext = 'mp4';
+           else if (contentType.includes('image/svg')) ext = 'svg';
+           else if (contentType.includes('image/jpeg') || contentType.includes('image/jpg')) ext = 'jpg';
+
+           const blob = await res.blob();
+           zip.file(`image_downloader/${Date.now()}_${i}.${ext}`, blob);
+           successCount++;
+        } catch (e) {
+           console.error("Failed to fetch media for zip", img.url, e);
+        }
+     }
+     
+     if (successCount === 0) {
+       showToast('文件获取失败，可能存在跨域问题', 'error');
+     } else {
+       const content = await zip.generateAsync({ type: "blob" });
+       saveAs(content, `ai_images_${Date.now()}.zip`);
+       showToast(`成功打包下载 ${successCount} 个文件`, 'success');
+     }
+   } catch (e) {
+     showToast('打包过程出错', 'error');
+     console.error(e);
+   } finally {
+     document.getElementById('dl-batch-btn').disabled = false;
+     document.getElementById('dl-batch-btn').innerHTML = '批量下载';
+   }
+});
+
+if (!isNewTab) {
+  renderLibrary();
+}

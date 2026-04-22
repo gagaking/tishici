@@ -5,6 +5,8 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { motion } from 'motion/react';
 import { manifestJson, contentCss, contentJs, backgroundJs, sidepanelHtml, sidepanelJs, collectionHtml, collectionJs } from './lib/extensionFiles';
+import jszipCode from 'jszip/dist/jszip.min.js?raw';
+import fileSaverCode from 'file-saver/dist/FileSaver.min.js?raw';
 
 export default function App() {
   const [promptText, setPromptText] = useState(
@@ -27,26 +29,54 @@ export default function App() {
     );
   };
 
-  const generateDuckIcon = async (size: number, type: 'gemini' | 'ollama'): Promise<Blob> => {
+  const generateAppIcon = async (size: number): Promise<Blob> => {
     return new Promise((resolve) => {
       const canvas = document.createElement('canvas');
       canvas.width = size;
       canvas.height = size;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.clearRect(0, 0, size, size);
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, size, size, size * 0.2);
+        ctx.fill();
 
-        ctx.font = `${size * 0.8}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('🦆', size / 2, size / 2 + size * 0.05);
+        ctx.fillStyle = '#60a5fa';
+        const center = size / 2;
+        const dotRadius = size * 0.15;
+        ctx.beginPath();
+        ctx.arc(center, center, dotRadius, 0, Math.PI * 2);
+        ctx.fill();
 
-        ctx.font = `${size * 0.35}px Arial`;
-        if (type === 'gemini') {
-          ctx.fillText('⚡️', size * 0.85, size * 0.25);
-        } else {
-          ctx.fillText('🛡️', size * 0.85, size * 0.25);
-        }
+        ctx.strokeStyle = '#f8fafc';
+        ctx.lineWidth = Math.max(1, size * 0.08);
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        const margin = size * 0.2;
+        const arrowSize = size * 0.15;
+
+        ctx.beginPath();
+        ctx.moveTo(size - margin, margin);
+        ctx.lineTo(center + dotRadius + size*0.05, center - dotRadius - size*0.05);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(size - margin - arrowSize, margin);
+        ctx.lineTo(size - margin, margin);
+        ctx.lineTo(size - margin, margin + arrowSize);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(margin, size - margin);
+        ctx.lineTo(center - dotRadius - size*0.05, center + dotRadius + size*0.05);
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(margin + arrowSize, size - margin);
+        ctx.lineTo(margin, size - margin);
+        ctx.lineTo(margin, size - margin - arrowSize);
+        ctx.stroke();
       }
       canvas.toBlob((blob) => {
         resolve(blob!);
@@ -57,9 +87,9 @@ export default function App() {
   const handleDownloadExtension = async (type: 'gemini' | 'ollama') => {
     const zip = new JSZip();
     
-    const icon16 = await generateDuckIcon(16, type);
-    const icon48 = await generateDuckIcon(48, type);
-    const icon128 = await generateDuckIcon(128, type);
+    const icon16 = await generateAppIcon(16);
+    const icon48 = await generateAppIcon(48);
+    const icon128 = await generateAppIcon(128);
     
     zip.file("icons/icon16.png", icon16);
     zip.file("icons/icon48.png", icon48);
@@ -81,8 +111,12 @@ export default function App() {
     zip.file("css/content.css", contentCss);
     zip.file("js/content.js", contentJs);
     zip.file("js/background.js", backgroundJs);
+    zip.file("js/jszip.min.js", jszipCode);
+    zip.file("js/FileSaver.min.js", fileSaverCode);
     
-    const updatedSidepanelHtml = sidepanelHtml.replace('src="sidepanel.js"', 'src="../js/sidepanel.js"');
+    let updatedSidepanelHtml = sidepanelHtml.replace('src="sidepanel.js"', 'src="../js/sidepanel.js"');
+    updatedSidepanelHtml = updatedSidepanelHtml.replace('</head>', '  <script src="../js/jszip.min.js"></script>\n  <script src="../js/FileSaver.min.js"></script>\n</head>');
+    
     const updatedCollectionHtml = collectionHtml.replace('src="collection.js"', 'src="../js/collection.js"');
     
     zip.file("html/sidepanel.html", updatedSidepanelHtml);
@@ -143,11 +177,11 @@ export default function App() {
             全新 Chrome 扩展
           </motion.div>
           <motion.h2 variants={itemVariants} className="text-6xl md:text-8xl font-black tracking-tighter mb-8 leading-[1.05] text-[#111827]">
-            AI视觉 副驾驶，<br />
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#6AA8FF] to-[#9B7BFF]">创作如虎添翼。</span>
+            Prompt Hunter<br />
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#6AA8FF] to-[#9B7BFF]">画廊嗅探与视觉反推</span>
           </motion.h2>
           <motion.p variants={itemVariants} className="text-xl md:text-2xl text-[#6b7280] leading-relaxed max-w-3xl mx-auto font-medium">
-            全新侧边栏架构，沉浸式 AI 辅助。支持 Gemini 在线极速推理，以及 Ollama 本地隐私计算。一键优化、智能注入，激发无限创作灵感。
+            全新侧边栏架构，沉浸式设计辅助。不仅提供强大的网页画廊嗅探与批量下载功能，更支持接入 Gemini 或 Ollama 进行精准的图片反推、生成及多轮智能对话。
           </motion.p>
           
           <motion.div variants={itemVariants} className="mt-12 flex justify-center">
@@ -156,35 +190,45 @@ export default function App() {
               className="flex items-center justify-center gap-3 bg-gradient-to-r from-[#6AA8FF] to-[#9B7BFF] text-white hover:from-[#7BB2FF] hover:to-[#A88CFF] px-8 py-4 rounded-full font-bold text-lg transition-all active:scale-95 shadow-[0_4px_12px_rgba(106,168,255,0.3),inset_0_1px_0_rgba(255,255,255,0.3)] hover:shadow-[0_0_20px_rgba(106,168,255,0.5),0_0_40px_rgba(155,123,255,0.3),inset_0_1px_0_rgba(255,255,255,0.4)]"
             >
               <Zap className="w-5 h-5" />
-              下载 AI视觉 副驾驶扩展
+              打包下载扩展 (包含画廊嗅探功能)
             </button>
           </motion.div>
-          <motion.div variants={itemVariants} className="mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto text-left">
-            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300">
-              <div className="w-10 h-10 bg-[#6AA8FF]/10 text-[#6AA8FF] rounded-xl flex items-center justify-center mb-4">
-                <Layers className="w-5 h-5" />
+          <motion.div variants={itemVariants} className="mt-16 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 max-w-6xl mx-auto text-left">
+            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300 flex flex-col h-full">
+              <div className="w-10 h-10 bg-[#6AA8FF]/10 text-[#6AA8FF] rounded-xl flex items-center justify-center mb-4 font-black flex-shrink-0">
+                1
               </div>
-              <h4 className="font-bold text-[#111827] mb-2">多任务并行处理</h4>
-              <p className="text-sm text-[#6b7280]">支持同时处理多个图片分析任务，极大提升工作效率，无需等待单个任务完成。</p>
+              <h4 className="font-bold text-[#111827] mb-2 flex items-center gap-2"><Layers className="w-4 h-4"/>图片智能精准反推</h4>
+              <p className="text-sm text-[#6b7280] leading-relaxed flex-1">支持无缝接入在线的 Gemini 或部署到本地的 Ollama (如 LLaVA)，极速推理目标图像的结构、光影及细节，一战式生成专业级 AI 绘画提示词文本序列。</p>
             </div>
-            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300">
-              <div className="w-10 h-10 bg-[#9B7BFF]/10 text-[#9B7BFF] rounded-xl flex items-center justify-center mb-4">
-                <MessageSquare className="w-5 h-5" />
+            
+            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300 flex flex-col h-full">
+              <div className="w-10 h-10 bg-[#9B7BFF]/10 text-[#9B7BFF] rounded-xl flex items-center justify-center mb-4 font-black flex-shrink-0">
+                2
               </div>
-              <h4 className="font-bold text-[#111827] mb-2">灵活的 Chat 聊天</h4>
-              <p className="text-sm text-[#6b7280]">在侧边栏与 AI 进行自由对话，随时补充细节、修改提示词，如同与真人助手交流。</p>
+              <h4 className="font-bold text-[#111827] mb-2 flex items-center gap-2"><Database className="w-4 h-4"/>沉浸式极速嗅探引擎</h4>
+              <p className="text-sm text-[#6b7280] leading-relaxed flex-1">自动捕获当前浏览网页深层加载的所有高清图片与视频资源。您可以通过内置强大的格式过滤及分辨率阈值筛选，一键打包 ZIP 下载数十张隐藏设定图。</p>
             </div>
-            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300">
-              <div className="w-10 h-10 bg-[#6AA8FF]/10 text-[#6AA8FF] rounded-xl flex items-center justify-center mb-4">
-                <Wand2 className="w-5 h-5" />
+            
+            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300 flex flex-col h-full">
+              <div className="w-10 h-10 bg-[#6AA8FF]/10 text-[#6AA8FF] rounded-xl flex items-center justify-center mb-4 font-black flex-shrink-0">
+                3
               </div>
-              <h4 className="font-bold text-[#111827] mb-2">全新百变提示词架构</h4>
-              <p className="text-sm text-[#6b7280]">内置 9 大维度解析架构，一键生成结构化、高质量的提示词。更可以手动编辑预设结构满足各种创作需求。</p>
+              <h4 className="font-bold text-[#111827] mb-2 flex items-center gap-2"><Wand2 className="w-4 h-4"/>个性化推演模型与预设</h4>
+              <p className="text-sm text-[#6b7280] leading-relaxed flex-1">不仅内置预建的 9 大视觉解构锚点系统，您还能完全自定义解析模版结构。对于特定行业需求（如摄影构图、插画肌理、赛博废墟感），随心定制返回的特征信息。</p>
+            </div>
+
+            <div className="bg-white/65 backdrop-blur-2xl p-6 rounded-2xl border border-white/50 shadow-[0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_32px_rgba(31,38,135,0.05),0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15)] hover:border-[#6AA8FF]/20 transition-all duration-300 flex flex-col h-full">
+              <div className="w-10 h-10 bg-[#9B7BFF]/10 text-[#9B7BFF] rounded-xl flex items-center justify-center mb-4 font-black flex-shrink-0">
+                4
+              </div>
+              <h4 className="font-bold text-[#111827] mb-2 flex items-center gap-2"><MessageSquare className="w-4 h-4"/>灵感库与多重重塑</h4>
+              <p className="text-sm text-[#6b7280] leading-relaxed flex-1">被反推的图片将静默缓存进您的历史图库随时调阅，同时您能在侧边栏对当次解析结果进行持续沟通：“换成水彩风格并保留构图”，AI 将动态重塑提示词。</p>
             </div>
           </motion.div>
         </motion.div>
 
-        {/* Interactive Demo */}
+        {/* Use Cases Section */}
         <motion.div 
           className="mb-32"
           initial="hidden"
@@ -193,30 +237,61 @@ export default function App() {
           variants={containerVariants}
         >
           <div className="text-center mb-16">
-            <h3 className="text-4xl md:text-5xl font-black tracking-tight text-[#111827] mb-4">反推效果示意</h3>
-            <p className="text-xl text-[#6b7280]">右键图片截图即可一键提取提示词，自动解析画面细节。</p>
+            <h3 className="text-4xl md:text-5xl font-black tracking-tight text-[#111827] mb-4">核心解决场景与应用</h3>
+            <p className="text-xl text-[#6b7280]">从设计师捕捉灵感、画师整理原画、到AI创作爱好者的全阶段能力补足。</p>
           </div>
-          <div className="max-w-4xl mx-auto bg-white/65 backdrop-blur-2xl p-6 rounded-[2.5rem] border border-white/50 shadow-[0_8px_32px_rgba(31,38,135,0.05)]">
-            <div className="flex flex-col md:flex-row gap-8 items-center">
-              <div className="w-full md:w-1/2 rounded-[2rem] overflow-hidden bg-white/50 aspect-[4/3] flex items-center justify-center relative group">
-                <img src="https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?q=80&w=1000&auto=format&fit=crop" alt="Demo" className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                  <div className="bg-white/90 text-[#111827] px-4 py-2 rounded-full font-bold text-sm flex items-center gap-2 shadow-xl backdrop-blur-md">
-                    <MousePointerClick className="w-4 h-4 text-[#6AA8FF]" />
-                    右键 → 截图提取提示词
-                  </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+            {/* Scenario 1 */}
+            <div className="group bg-white/65 backdrop-blur-2xl rounded-[2rem] border border-white/50 overflow-hidden shadow-[0_8px_32px_rgba(31,38,135,0.05)] hover:shadow-[0_8px_32px_rgba(106,168,255,0.15)] transition-all duration-300">
+              <div className="h-44 bg-slate-100 overflow-hidden relative">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent z-10" />
+                <img src="https://images.unsplash.com/photo-1600132806370-bf17e65e942f?q=80&w=800&auto=format&fit=crop" alt="UI Design" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute bottom-4 left-4 z-20 text-white font-bold text-[15px] flex items-center gap-2"><Sparkles className="w-4 h-4"/> 难以用语言复制的优秀设计</div>
+              </div>
+              <div className="p-5">
+                <p className="text-[#6b7280] leading-relaxed text-sm mb-4">
+                  当你浏览 Behance 或是 Pinterest，被其惊艳的光影或角色质感所折服，却不知道如何将它们输入进 Midjourney。启动侧边栏一键反推功能，AI 会穿透视觉表象，将其拆解为标准的色彩映射及光线镜头关键词等硬核提示词矩阵，为你打破创作屏障。
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="bg-[#6AA8FF]/10 text-[#6AA8FF] px-3 py-1 rounded-full text-xs font-bold border border-[#6AA8FF]/20">精准提示词生成</span>
+                  <span className="bg-[#9B7BFF]/10 text-[#9B7BFF] px-3 py-1 rounded-full text-xs font-bold border border-[#9B7BFF]/20">局部风格提取</span>
                 </div>
               </div>
-              <div className="w-full md:w-1/2 space-y-4">
-                <div className="bg-white/50 p-6 rounded-2xl border border-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
-                  <h4 className="font-bold text-[#111827] mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4 text-[#9B7BFF]" /> 提取结果</h4>
-                  <p className="text-sm text-[#6b7280] leading-relaxed">
-                    {promptText}
-                  </p>
+            </div>
+
+            {/* Scenario 2 */}
+            <div className="group bg-white/65 backdrop-blur-2xl rounded-[2rem] border border-white/50 overflow-hidden shadow-[0_8px_32px_rgba(31,38,135,0.05)] hover:shadow-[0_8px_32px_rgba(106,168,255,0.15)] transition-all duration-300">
+              <div className="h-44 bg-slate-100 overflow-hidden relative">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent z-10" />
+                <img src="https://images.unsplash.com/photo-1542744173-8e7e53415bb0?q=80&w=800&auto=format&fit=crop" alt="Assets" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute bottom-4 left-4 z-20 text-white font-bold text-[15px] flex items-center gap-2"><Database className="w-4 h-4"/> 海量图包无法一键带走？</div>
+              </div>
+              <div className="p-5">
+                <p className="text-[#6b7280] leading-relaxed text-sm mb-4">
+                  面对电商详情页几十张高清切片，或者摄影博客中满屏的套图原画，一个个“受限另存为”令人抓狂。启动多媒体嗅探器引擎，插件通过多模式遍历当前网页 DOM 树与渲染层，立刻帮你筛选出所有高清大图或是媒体原文件，只需一步即可 ZIP 满载而归。
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="bg-[#6AA8FF]/10 text-[#6AA8FF] px-3 py-1 rounded-full text-xs font-bold border border-[#6AA8FF]/20">一键打包ZIP</span>
+                  <span className="bg-[#9B7BFF]/10 text-[#9B7BFF] px-3 py-1 rounded-full text-xs font-bold border border-[#9B7BFF]/20">智能格式过滤</span>
                 </div>
-                <div className="flex gap-2">
-                  <button className="flex-1 bg-gradient-to-r from-[#6AA8FF] to-[#9B7BFF] text-white py-3 rounded-xl font-bold text-sm hover:from-[#7BB2FF] hover:to-[#A88CFF] transition-all shadow-[0_4px_12px_rgba(106,168,255,0.3),inset_0_1px_0_rgba(255,255,255,0.3)] hover:shadow-[0_0_20px_rgba(106,168,255,0.5),0_0_40px_rgba(155,123,255,0.3),inset_0_1px_0_rgba(255,255,255,0.4)]">复制提示词</button>
-                  <button onClick={handleOutfitChange} className="flex-1 bg-white/65 text-[#111827] py-3 rounded-xl font-bold text-sm hover:bg-white/90 transition-all border border-white/50 shadow-[inset_0_1px_0_rgba(255,255,255,0.8),0_2px_8px_rgba(0,0,0,0.04)] hover:shadow-[0_0_15px_rgba(106,168,255,0.3),0_0_30px_rgba(155,123,255,0.15),inset_0_1px_0_rgba(255,255,255,1)] hover:border-[#6AA8FF]/30 hover:text-[#6AA8FF]">一键换装</button>
+              </div>
+            </div>
+
+            {/* Scenario 3 */}
+            <div className="group bg-white/65 backdrop-blur-2xl rounded-[2rem] border border-white/50 overflow-hidden shadow-[0_8px_32px_rgba(31,38,135,0.05)] hover:shadow-[0_8px_32px_rgba(106,168,255,0.15)] transition-all duration-300">
+              <div className="h-44 bg-slate-100 overflow-hidden relative">
+                <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent z-10" />
+                <img src="https://images.unsplash.com/photo-1522252234503-e356532cafd5?q=80&w=800&auto=format&fit=crop" alt="Workflow" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                <div className="absolute bottom-4 left-4 z-20 text-white font-bold text-[15px] flex items-center gap-2"><Layers className="w-4 h-4"/> 打破“一波流”的闭环困局</div>
+              </div>
+              <div className="p-5">
+                <p className="text-[#6b7280] leading-relaxed text-sm mb-4">
+                  通过“灵感库”串联起了你的工作心流：当你收集完批量图包素材并存入本地后，它们并没有躺尸在你的硬盘里。你可以随时在侧边栏唤醒灵感库并把这些抓取的图片抛给大模型分析，并开启针对该设定图的“换动作、补细节”的连续指令引导优化模式。
+                </p>
+                <div className="flex gap-2 flex-wrap">
+                  <span className="bg-[#6AA8FF]/10 text-[#6AA8FF] px-3 py-1 rounded-full text-xs font-bold border border-[#6AA8FF]/20">灵感存档追溯</span>
+                  <span className="bg-[#9B7BFF]/10 text-[#9B7BFF] px-3 py-1 rounded-full text-xs font-bold border border-[#9B7BFF]/20">多回合修正对话</span>
                 </div>
               </div>
             </div>
@@ -273,9 +348,9 @@ export default function App() {
                       </a>
                     </div>
                     <div>
-                      <h5 className="font-bold text-[#111827] mb-2">2. 安装 gemma4:e4b 模型</h5>
+                      <h5 className="font-bold text-[#111827] mb-2">2. 安装 qwen3.5:9b 模型</h5>
                       <p className="text-sm text-[#6b7280] mb-2">打开终端或命令提示符，运行以下命令：</p>
-                      <code className="block bg-[#111827] text-white p-3 rounded-lg text-sm font-mono shadow-inner">ollama run gemma4:e4b</code>
+                      <code className="block bg-[#111827] text-white p-3 rounded-lg text-sm font-mono shadow-inner">ollama run qwen3.5:9b</code>
                     </div>
                     <div>
                       <h5 className="font-bold text-[#111827] mb-2">3. 允许跨域请求 (重要)</h5>

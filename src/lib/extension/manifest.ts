@@ -1,15 +1,16 @@
 export const manifestJson = `{
   "manifest_version": 3,
-  "name": "AI 提示词提取器",
-  "version": "1.5",
-  "description": "使用 Gemini 或 Ollama 智能分析网页图片，一键反推高质量 AI 绘画提示词。",
+  "name": "AI视觉反推",
+  "version": "2.0.0",
+  "description": "融合网页图片内容嗅探、批量下载与多架构 AI 视觉反推能力的侧边栏副驾驶助手。",
   "permissions": [
     "storage",
     "unlimitedStorage",
     "contextMenus",
     "activeTab",
     "scripting",
-    "sidePanel"
+    "sidePanel",
+    "downloads"
   ],
   "host_permissions": [
     "*://*/*"
@@ -48,3 +49,4 @@ export const manifestJson = `{
     }
   }
 }`;
+
